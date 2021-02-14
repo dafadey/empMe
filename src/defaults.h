@@ -1,29 +1,32 @@
 #pragma once
-
-//#define USEDOUBLE
-
+#define USEDOUBLE
 #ifdef USEDOUBLE
 	#define FL_DBL double
 	#define FPT(x) x
+  #define ON 1.0
+  #define OFF 0.0
 #else
 	#define FL_DBL float
 	#define FPT(x) x##f // Floating Point Type
+  #define ON 1.0f
+  #define OFF 0.0f
 #endif
 
 // sample run scenario
 //./test_mGPU DRAW=1 Tmax=500000 Lx=40000 Nx=1024 Nz=2048 Lz=168000 toothWidth=6000 mediaDepth=0 toothDepth=3000 diffusion=20 extSource=1 srcX=100 srcT=36000 srcAmp=0.0000005 toothDirection=0
 
+
 #define PMLX FPT(4000.0) // 100.0
 #define PMLSTRENGTH FPT(0.05) // 0.1
 #define SHIFTGRANULARITY 1  // NOTE: shift is counted in blocks
-#define HYDROZSRC FPT(0.0)
-#define HYDROXSRC FPT(0.0)
+#define HYDROZSRC OFF
+#define HYDROXSRC OFF
 
-#define MAINSRC	FPT(0.0) // 1
-#define PRESSURESRC	FPT(0.0) // 1
-#define HSRC	FPT(0.0) // 1
+#define MAINSRC	OFF // ON
+#define PRESSURESRC	OFF // ON
+#define HSRC	OFF // ON
 
-#define IFNONLIN	FPT(0.0) // 1
+#define IFNONLIN  OFF // ON
 
 #define BOUND_W2 6.0e-6
 #define BOUND_BETA 0.000423//((omegaOpt/1.7)*(omegaOpt/1.7)*70.0)
@@ -72,3 +75,5 @@
 
 #define OUTPUTFILENAME "data.dat"
 #define ITER 1000
+
+#define SQRTNUT //sqrt

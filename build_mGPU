@@ -1,14 +1,16 @@
 #!/bin/bash
 rm -f test_mGPU
 
-arch=CC30
-mrch=sm_30
+arch=CC30 #CC35
+mrch=sm_30 #sm_35
 
 enable_double=""
 if [ -n "$1" ]
 then
   if (("$1" == "double"))
   then
+    arch=CC30
+    mrch=sm_30
     enable_double="-DUSEDOUBLE"
   fi
 fi
@@ -27,13 +29,13 @@ echo "   gpu..."
 /usr/local/cuda-9.0/bin/nvcc -w -Xcompiler -fPIC ${enable_double} $INC -O3 -c -arch=$mrch $fm src/service.cu -o service.obj
 
 echo "   cpu..."
-g++ $INC -std=c++11 ${enable_double} -Wall -Werror src/geo.cpp -c -O3 -o geo.obj
-g++ $INC -std=c++11 ${enable_double} -Wall -Werror src/test.cpp -c -O3 -fopenmp -o test.obj
+/usr/bin/g++-6 $INC -std=c++11 ${enable_double} -Wall -Werror src/geo.cpp -c -O3 -o geo.obj
+/usr/bin/g++-6 $INC -std=c++11 ${enable_double} -Wall -Werror src/test.cpp -c -O3 -fopenmp -o test.obj
 
 MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -ltclient -lgetGPUtemp" #-lnvidia-ml
 #MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -lgetGPUtemp" #-lgetGPUtemp #-lnvidia-ml
 
 echo "linking..."
-g++ $LIB geo.obj test.obj simple.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU
+/usr/bin/g++-6 $LIB geo.obj test.obj simple.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU
 
 rm -f *.obj

@@ -88,6 +88,7 @@ struct hydro2dHandler
 	FL_DBL* Phx;
 	FL_DBL* Jz;
 	FL_DBL* Jx;
+	FL_DBL* mat_mask;
 	FL_DBL* n;
 	FL_DBL* Te;
 	FL_DBL* dTe;
@@ -97,7 +98,7 @@ struct hydro2dHandler
 	FL_DBL* vz;
 	FL_DBL* PML_Byx; // helper fields required for PML
 	FL_DBL* PML_Byz; // helper fields required for PML
-	//feed arrays
+  //feed arrays
 	FL_DBL* feedPtz;
 	FL_DBL* feedPtx;
 	FL_DBL* feedPz;
@@ -113,6 +114,7 @@ struct hydro2dHandler
 	FL_DBL* feedPhx;
 	FL_DBL* feedJz;
 	FL_DBL* feedJx;
+	FL_DBL* feed_mat_mask;
 	FL_DBL* feedn;
 	FL_DBL* feedTe;
 	FL_DBL* srcx;
@@ -165,6 +167,9 @@ struct hydro2dHandler
 	const int JHEAT; // 0-E^2, 1-j^2, 2-j*E
 	bool toothDir; // positive/negative
 	bool flip; // if flip then tooths are below surface
+
+	bool linear;
+
 	hydro2dHandler(int /*dev*/, bool = false /*doPhononAbsorbtion*/, bool = false /*doPolarization*/, bool = false/*extSource*/, int = 0 /*JHEAT*/);
 	hydro2dHandler(const hydro2dHandler& obj, int dev = -1);
 private:
@@ -188,6 +193,9 @@ void GPUgetField(hydro2dHandler* hH, FL_DBL* E_z, FL_DBL* E_x, FL_DBL* B_y);
 
 extern "C"
 int simpleGPUstep(hydro2dHandler*);
+
+extern "C"
+int CUDA_device_count();
 
 extern "C"
 void simpleGPUinit(hydro2dHandler*); // do all allocations and so on...

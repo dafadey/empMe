@@ -119,6 +119,8 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 	*/
+	bool nonlinVSlin(false);
+	
 	int Nx = NX;
 	int Nz = NZ;
 	FL_DBL Lx = LX;
@@ -230,6 +232,7 @@ int main(int argc, char* argv[])
 			PARSE2(phWidth, phonon_phw);
 			PARSE2(phBeta, phonon_beta);
 			PARSE2(silentIterations,iter);
+			PARSE(nonlinVSlin);
 			printf("ERROR: input parameter %s is unknown\n",name.c_str());
 		}
 	}
@@ -285,7 +288,8 @@ int main(int argc, char* argv[])
 	else if (jHeat==0)
 	  description << "         electrons heated by electric field";
 	description << std::endl;
-
+	description << (nonlinVSlin ? "   generated signal = non_linear - linear" : "   generated signal = 2 * (non_linear(A) - 2 * non_linear(A/2))");
+	description << std::endl;
 	std::cout << description.str();
 	//CPU
 	// alloc
@@ -327,8 +331,10 @@ int main(int argc, char* argv[])
 	FL_DBL* byWeakGPU=new FL_DBL[Nx*Nz];
 	FL_DBL* generationBy=new FL_DBL[Nx*Nz];
 	
+  std::cout << "NUMBER OF AVAILABLE CUDA DEVICES IS " << CUDA_device_count() << '\n';
+  
 	//init simple
-	hydro2dHandler* hH = new hydro2dHandler(dev /*device*/, doPhononAbsorbtion/*doPhononAbsorbtion*/, doPolarization/*doPolarization*/, extSource, jHeat);
+	hydro2dHandler* hH = new hydro2dHandler(dev /*device*/ % CUDA_device_count(), doPhononAbsorbtion/*doPhononAbsorbtion*/, doPolarization/*doPolarization*/, extSource, jHeat);
 	hH->Nx = Nx;
 	hH->Nz = Nz;
 	hH->Lx = Lx;
@@ -368,15 +374,20 @@ int main(int argc, char* argv[])
 	hH->srcX = srcX;
 	hH->landauDamping = landauDamping;
 	
+	
 	simpleGPUinit(hH); // do all allocations and so on...
 	
 	hydro2dHandler* hH_weak = nullptr;
 	if(!extSource)
 	{
-		//hydro2dHandler hH_weak_obj(*hH, dev+1);
-		hH_weak = new hydro2dHandler(*hH, dev+1);// &hH_weak_obj;
-		hH_weak->srcAmp = FPT(0.5) * hH->srcAmp;
+		hH_weak = new hydro2dHandler(*hH, (dev + 1) % CUDA_device_count());
+		if(nonlinVSlin)
+			hH_weak->linear = true;
+		else
+			hH_weak->srcAmp = FPT(0.5) * hH->srcAmp;
 	}
+	
+	std::cout << "main handler is " << (hH->linear ? "linear" : "nonlinear") << ", weak handler is " << (hH_weak->linear ? "linear" : "nonlinear") << '\n';
 	
 	printf("USING toothDepth=%g, toothWidth=%g\n",hH->toothDepth,hH->toothWidth);
 
@@ -411,16 +422,22 @@ int main(int argc, char* argv[])
 
 	executor e(2);
 	//calculate and save generation
+	FL_DBL extraction_factor = nonlinVSlin ? FPT(1.0) : FPT(2.0);
   map_timer tim;
 	while(hH->t < tMAX)
 	{
-	
+    /*
+    if(hH->step > 4460)
+      iter=1;
+  */
+    //GPUstep((void*)hH);
+    //GPUstep((void*)hH_weak);
+    
     e.exec(&GPUstep, (void*) hH, 0);
 		if(hH_weak)
 			e.exec(&GPUstep, (void*) hH_weak, 1);
 		e.sync();
-		
-		
+				
 		if(hH_weak)
 		{
 			if(hH_weak->t != hH->t || hH_weak->step != hH->step)
@@ -461,29 +478,82 @@ int main(int argc, char* argv[])
       {
         bnorm += std::abs(byGPU[i]);
         bweaknorm += std::abs(byWeakGPU[i]);
-        bdiffnorm += std::abs(byGPU[i] - FPT(2.0)*byWeakGPU[i]);
+        if(nonlinVSlin)
+					bdiffnorm += std::abs(byGPU[i] - byWeakGPU[i]);
+        else
+					bdiffnorm += FPT(2.0) * std::abs(byGPU[i] - FPT(2.0) * byWeakGPU[i]);
       }
-			std::cout << "iter #=" << hH->step << ", t=" << hH->t << " (target=" << tMAX << "), bnorm=" << bnorm << ", bweaknorm=" << bweaknorm << ", bdiffnorm=" << bdiffnorm << "\n" << std::flush;
+      dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
+      dev_d2h(hH, hH->Jx, jxGPU, hH->Nx * hH->Nz);
+      dev_d2h(hH, hH->Jz, jzGPU, hH->Nx * hH->Nz);
+      FL_DBL maxTe = FPT(0.0);
+      FL_DBL maxJ = FPT(0.0);
+      FL_DBL surf_J_avg = FPT(0.0);
+      FL_DBL surf_Te_avg = FPT(0.0);
+      FL_DBL surf_nuf_avg = FPT(0.0);
+      FL_DBL surf_norm_T = FPT(0.0);
+      FL_DBL surf_norm_J = FPT(0.0);
+      for(int i=0; i!=hH->Nz; i++)
+      {
+        for(int j=0; j!=hH->Nx; j++)
+        {
+          maxTe = std::max(maxTe, TeGPU[i]);
+          if(TeGPU[j+i*hH->Nx] > FPT(1.e-5))
+          {
+            surf_norm_T += FPT(1.0);
+            surf_Te_avg += TeGPU[j+i*hH->Nx];
+            surf_nuf_avg += FPT(1.0) + hH->NUTratio * SQRTNUT(TeGPU[j+i*hH->Nx]);
+            break;
+          }
+        }
+        for(int j=0; j!=hH->Nx; j++)
+        {
+          FL_DBL J = sqrt(jxGPU[j+i*hH->Nx] * jxGPU[j+i*hH->Nx] + jzGPU[j+i*hH->Nx] * jzGPU[j+i*hH->Nx]);
+          maxJ = std::max(maxJ, J);
+          if(J > FPT(0.0))
+          {
+            surf_norm_J += FPT(1.0);
+            surf_J_avg += J;
+            break;
+          }
+        }
+      }
+
+      if(surf_norm_T == FPT(0.0))
+        surf_norm_T = FPT(1.0);
+      surf_Te_avg /= surf_norm_T;
+      surf_nuf_avg /= surf_norm_T;
+
+      if(surf_norm_J == FPT(0.0))
+        surf_norm_J = FPT(1.0);
+      surf_J_avg /= surf_norm_J;
+
+      FL_DBL nuf = FPT(1.0) + hH->NUTratio * SQRTNUT(maxTe);
+			std::cout << "\niter #=" << hH->step << ", t=" << hH->t << " (target=" << tMAX << "), bnorm=" << bnorm << ", bweaknorm=" << bweaknorm << ", bdiffnorm=" << bdiffnorm << ",\nmaxT=" << maxTe << ", Te0=" << hH->mediaTe0 << ", nu_factor=" << nuf << ", nu=" << hH->mediaNu * nuf << ",\nw=" << 2.0*M_PI/hH->srcT*hH->srcNosc << ",\nt_s_avg=" << surf_Te_avg << ", nuf_s_avg=" << surf_nuf_avg << ", nu_s_avg=" << surf_nuf_avg * hH->mediaNu << ", maxJ=" << maxJ << ", surf_J=" << surf_J_avg << "\n" << std::flush;
       
 			if(DRAW)
 			{
 				GPUgetField(hH, ezGPU, exGPU, byGPU);
 				dev_d2h(hH, hH->Jz, jzGPU, hH->Nx * hH->Nz);
-				dev_d2h(hH, hH_weak->Jz, jxGPU, hH->Nx * hH->Nz);
-				for(int i=0;i<hH->Nx * hH->Nz;i++)
-					jzGPU[i]-=jxGPU[i] * FPT(2.0);
-				dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
-				for(int i(0); i != hH->Nx * hH->Nz; i++)
-					TeGPU[i] = TeGPU[i] == FPT(0.0) ? FPT(0.0) : TeGPU[i] - hH->mediaTe0;
+        dev_d2h(hH, hH->Jx, jxGPU, hH->Nx * hH->Nz);
+				//dev_d2h(hH, hH_weak->Jz, jxGPU, hH->Nx * hH->Nz);
+				//for(int i=0;i<hH->Nx * hH->Nz;i++)
+				//	jzGPU[i]-=jxGPU[i] * FPT(2.0);
+					
+				
+        dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
+				//for(int i(0); i != hH->Nx * hH->Nz; i++)
+				//	TeGPU[i] = TeGPU[i] == FPT(0.0) ? FPT(0.0) : TeGPU[i] - hH->mediaTe0;
 				
         dev_d2h(hH, hH->n, nWeakGPU, hH->Nx * hH->Nz);
+        //dev_d2h(hH, hH->mat_mask, nWeakGPU, hH->Nx * hH->Nz);
 				//for(int i=0;i<hH->Nx * hH->Nz;i++)
 				//	nWeakGPU[i]=(nWeakGPU[i]==FPT(0.0)) ? FPT(0.0) : nWeakGPU[i]-hH->mediaN0;
 
 				if(hH_weak)
 					dev_d2h(hH_weak, hH_weak->By, byWeakGPU, hH->Nx * hH->Nz);
 
-				fadey_draw(byWeakGPU, Nx, Nz, 2);
+				//fadey_draw(byWeakGPU, Nx, Nz, 2);
 				fadey_draw(jzGPU, Nx, Nz, 0);
 				fadey_draw(jxGPU, Nx, Nz, 1);
 				fadey_draw(ezGPU, Nx, Nz, 3);
@@ -491,10 +561,20 @@ int main(int argc, char* argv[])
 				fadey_draw(byGPU, Nx, Nz, 5);
 				fadey_draw(TeGPU, Nx, Nz, 6);
 				fadey_draw(nWeakGPU, Nx, Nz, 7);
+				
 				for(int i(0); i != Nx * Nz; i++)
-					generationBy[i] = (byGPU[i] - byWeakGPU[i] * FPT(2.0)) * FPT(2.0);
+					generationBy[i] = (byGPU[i] - byWeakGPU[i] * extraction_factor) * extraction_factor;
+				
 				fadey_draw(generationBy, Nx, Nz, 8);
-			}
+        
+        dev_d2h(hH_weak, hH_weak->Jz, jxGPU, hH->Nx * hH->Nz);
+        
+        for(int i=0;i<hH->Nx * hH->Nz;i++)
+					jzGPU[i]-=jxGPU[i] * extraction_factor;
+				
+        fadey_draw(jzGPU, Nx, Nz, 2);
+        
+      }
 		}
 	}
 	// ok we reached target time.
@@ -541,7 +621,7 @@ int main(int argc, char* argv[])
 			if(hH_weak)
 			{
 				for(int i(0); i != Nx * Nz; i++)
-					generationBy[i] = (byGPU[i] - byWeakGPU[i] * FPT(2.0)) * FPT(2.0);
+					generationBy[i] = (byGPU[i] - byWeakGPU[i] * extraction_factor) * extraction_factor;
 			}
 			else
 			{
@@ -576,7 +656,7 @@ int main(int argc, char* argv[])
 			dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
 			FL_DBL TeMAX(.0);
 			for(int i(0); i != hH->Nx * hH->Nz; i++)
-				TeMAX = std::max(TeGPU[i] == FL_DBL(.0) ? FL_DBL(.0) : TeGPU[i] - mediaTe0, TeMAX);
+				TeMAX = std::max(TeGPU[i], TeMAX);//std::max(TeGPU[i] == FL_DBL(.0) ? FL_DBL(.0) : TeGPU[i] - mediaTe0, TeMAX);
 			therm << hH->t << '\t' << TeMAX << '\n';
 		}
 		for(int i(0); i != Nx * Nz * 4; i++)
