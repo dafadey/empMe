@@ -1,0 +1,6 @@
+#!/bin/bash
+rm -f stationary.cpp.o a.out
+
+g++ --std=c++11 -c stationary.cpp -O3 -I/home/dan/tools/include/ -o stationary.cpp.o
+
+g++ stationary.cpp.o -O3 -L/home/dan/tools/lib/ -lsimpledraw_glfw3 -Wl,-rpath=/home/dan/tools/lib/
