@@ -21,27 +21,27 @@ struct cell
 	cell() : geo(nullptr), lz(1), zmin(0), zmax(0), has_parent(false) {}
 	cell(const cell& c) : geo(c.geo), lz(1), zmin(0), zmax(0), has_parent(true) {}
 	~cell();
-	inline FL_DBL get_lz() const
+	inline double get_lz() const
 	{
 		return lz;
 	}
-	inline FL_DBL get_zmin() const
+	inline double get_zmin() const
 	{
 		return zmin;
 	}
-	inline FL_DBL get_zmax() const
+	inline double get_zmax() const
 	{
 		return zmax;
 	}
 	void scalex(double /*ratio*/);
 	void scaley(double /*ratio*/);
-	bool inside(FL_DBL, FL_DBL) const;
-	bool load_from_svg(const char*, FL_DBL=1/*lz*/);
+	bool inside(double, double) const;
+	bool load_from_svg(const char*, double=1/*lz*/);
 
 private:
 	POLY* geo;
-	FL_DBL lz;
-	FL_DBL zmin;
-	FL_DBL zmax;
+	double lz;
+	double zmin;
+	double zmax;
 	bool has_parent;
 };

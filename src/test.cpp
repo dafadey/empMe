@@ -13,10 +13,10 @@
 #include "simpledraw.h"
 #include "executor.h"
 
-//#include "getGPUtemp.h"
+#include "getGPUtemp.h"
 
 //#include "nvml.h"
-#include "tclient.h"
+//#include "tclient.h"
 
 #include "zstream.h"
 #include <unistd.h> // sleep, getpid
@@ -94,15 +94,13 @@ int halt()
 
 bool cool_dev(int dev)
 {
-	/*int t=getGPUtemp(dev);
-	/printf("temp is %d\n",t);
-	if(t < 80)
+	int t=getGPUtemp(dev);
+	if(t < 75)
 		return true;
-	while(getGPUtemp(dev)>80)
+	while(getGPUtemp(dev)>75)
 		sleep(7);
+	printf("temp is %d\n",t);
 	return true;
-*/	
-  return true;//cooldevice(dev);
 }
 
 void GPUstep(void* arg)
@@ -134,7 +132,9 @@ int main(int argc, char* argv[])
 	bool doPhononAbsorbtion(false);
 	bool doPolarization(false);
 	bool extSource(false);
-		
+	int jHeat(2);
+  
+  FL_DBL NUTratio(NUTRATIO);
 	FL_DBL diffusion(DIFFUSION);
 	FL_DBL mediaN0(N0);
 	FL_DBL mediaTe0(TE0);
@@ -205,6 +205,7 @@ int main(int argc, char* argv[])
 			PARSE(mediaDepth);
 			PARSE2(output,outputFilename);
 			PARSE(Tavg);
+      PARSE(NUTratio);
 
 			PARSE2(cell,cellFilename);
 			PARSE(cell_scalex);
@@ -219,6 +220,7 @@ int main(int argc, char* argv[])
 			PARSE2(doPhonon, doPhononAbsorbtion);
 			PARSE(doPolarization);
 			PARSE(extSource);
+      PARSE(jHeat);
 			PARSE2(Tmax,tMAX);
 			PARSE2(device,dev);
 			PARSE(bound_w2);
@@ -246,8 +248,8 @@ int main(int argc, char* argv[])
 		}
 		if(c_ptr)
 		{
-			c_ptr->scalex(cell_scalex);
-			c_ptr->scaley(cell_scaley);
+			c_ptr->scalex((double) cell_scalex);
+			c_ptr->scaley((double) cell_scaley);
 		}
 	}
 	
@@ -255,11 +257,16 @@ int main(int argc, char* argv[])
 	const FL_DBL dz_1 = FL_DBL(Nz)/Lz;
 	const FL_DBL dt = FPT(0.5)*((FPT(1.0)/dx_1<FPT(1.0)/dz_1)?FPT(1.0)/dx_1:FPT(1.0)/dz_1);
 	std::stringstream description;
+  #ifdef USEDOUBLE
+  description << "accuracy: double\n";
+  #else
+  description << "accuracy: float\n"; 
+  #endif
 	description << "grid: Lx=" << Lx << ", Lz=" << Lz << ", Nx=" << Nx << ", Nz=" << Nz << ", dx_1=" << dx_1 << " (dx=" << FPT(1.0)/dx_1 << "), dz_1=" << dz_1 << " (dz=" << FPT(1.0)/dz_1 << "), dt=" << dt << ", PMLx=" << PMLx << ", PMLstrength=" << PMLstrength << std::endl;
 	description << "run: Tmax=" << tMAX << ", Tavg=" << Tavg << ", output=" << outputFilename << ", silentIterations(iterations before draw/save)=" << iter << ",\ngeometry: toothWith=" << toothWidth<< ", toothDepth=" << toothDepth << ", mediaDepth=" << mediaDepth;
 	if(c_ptr)
 		description << ", cellFilename=" << cellFilename << ", scalex=" << cell_scalex << ", scaley=" << cell_scaley;
-	description << ", flip=" << (flip?"true":"false") << ", toothDirection=" << (toothDir?"true":"false") << ",\nmedia: n0=" << mediaN0 << ", T0=" << mediaTe0 << ", diffusion=" << diffusion << "," << " mz_1=" << mz_1 << "," << " mx_1=" << mx_1 << ",";
+	description << ", flip=" << (flip?"true":"false") << ", toothDirection=" << (toothDir?"true":"false") << ",\nmedia: n0=" << mediaN0 << ", T0=" << mediaTe0 << ", nu=" << mediaNu << ", diffusion=" << diffusion << "," << " mz_1=" << mz_1 << "," << " mx_1=" << mx_1 << ", NUTratio=" << NUTratio << ",";
 	if (doPolarization)
 	description << "\n       bound_w2=" << bound_w2 << " bound_beta=" << bound_beta << ", bound_gamma=" << bound_gamma << ",";
 	if (doPhononAbsorbtion)
@@ -269,8 +276,15 @@ int main(int argc, char* argv[])
 		description << "         therm source is external, srcX=" << srcX;
 	else
 		description << "         source is electromagnetic (use extSource=1 to switch to thermal source)";
-	description << ", srcAmp=" << srcAmp << ", srcT=" << srcT << ", srcNosc=" << srcNosc << ", switchOnDelay=" << switchOnDelay << ", srcTfactor=" << srcTfactor << std::endl;
+  description << ", srcAmp=" << srcAmp << ", srcT=" << srcT << ", srcNosc=" << srcNosc << ", switchOnDelay=" << switchOnDelay << ", srcTfactor=" << srcTfactor << std::endl;
 	description << "         velocity=" << velocity << std::endl;
+	if (jHeat==1)
+	  description << "         electrons heated by current";
+	else if (jHeat==2)
+	  description << "         electrons heated classicaly by (j, E)";
+	else if (jHeat==0)
+	  description << "         electrons heated by electric field";
+	description << std::endl;
 
 	std::cout << description.str();
 	//CPU
@@ -307,13 +321,14 @@ int main(int argc, char* argv[])
 	FL_DBL* jxGPU=new FL_DBL[Nx*Nz];
 	FL_DBL* jzGPU=new FL_DBL[Nx*Nz];
 	FL_DBL* byGPU=new FL_DBL[Nx*Nz];
-	FL_DBL* nGPU=new FL_DBL[Nx*Nz];
+	FL_DBL* TeGPU=new FL_DBL[Nx*Nz];
+	FL_DBL* neGPU=new FL_DBL[Nx*Nz];
 	FL_DBL* nWeakGPU=new FL_DBL[Nx*Nz];
 	FL_DBL* byWeakGPU=new FL_DBL[Nx*Nz];
 	FL_DBL* generationBy=new FL_DBL[Nx*Nz];
 	
 	//init simple
-	hydro2dHandler* hH = new hydro2dHandler(dev /*device*/, doPhononAbsorbtion/*doPhononAbsorbtion*/, doPolarization/*doPolarization*/, extSource);
+	hydro2dHandler* hH = new hydro2dHandler(dev /*device*/, doPhononAbsorbtion/*doPhononAbsorbtion*/, doPolarization/*doPolarization*/, extSource, jHeat);
 	hH->Nx = Nx;
 	hH->Nz = Nz;
 	hH->Lx = Lx;
@@ -334,6 +349,7 @@ int main(int argc, char* argv[])
 	hH->mediaTe0 = mediaTe0;
 	hH->mediaNu = mediaNu;
 	hH->diffusion = diffusion;
+	hH->NUTratio = NUTratio;
 	hH->media_bound_w2 = bound_w2;
 	hH->media_bound_gamma = bound_gamma;
 	hH->media_bound_beta = bound_beta;
@@ -355,14 +371,13 @@ int main(int argc, char* argv[])
 	simpleGPUinit(hH); // do all allocations and so on...
 	
 	hydro2dHandler* hH_weak = nullptr;
-	
-/*
 	if(!extSource)
 	{
+		//hydro2dHandler hH_weak_obj(*hH, dev+1);
 		hH_weak = new hydro2dHandler(*hH, dev+1);// &hH_weak_obj;
 		hH_weak->srcAmp = FPT(0.5) * hH->srcAmp;
 	}
-	*/
+	
 	printf("USING toothDepth=%g, toothWidth=%g\n",hH->toothDepth,hH->toothWidth);
 
 	if(!hH)
@@ -373,10 +388,11 @@ int main(int argc, char* argv[])
 	GPUsetField(hH, ezCPU, exCPU, byCPU);
 	if(hH_weak)
 		GPUsetField(hH_weak, ezCPU, exCPU, byCPU);
+
 	if(DRAW)
 	{
 		GPUgetField(hH, ezGPU, exGPU, byGPU);
-		dev_d2h(hH, hH->Te, nGPU, hH->Nx * hH->Nz);
+		dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
 		dev_d2h(hH, hH->n, nWeakGPU, hH->Nx * hH->Nz);
 		if(hH_weak)
 			dev_d2h(hH_weak, hH_weak->By, byWeakGPU, hH->Nx * hH->Nz);
@@ -385,32 +401,44 @@ int main(int argc, char* argv[])
 		fadey_draw(ezGPU,Nx,Nz,3);
 		fadey_draw(exGPU,Nx,Nz,4);
 		fadey_draw(byGPU,Nx,Nz,5);
-		fadey_draw(nGPU,Nx,Nz,6);
+		fadey_draw(TeGPU,Nx,Nz,6);
 		fadey_draw(nWeakGPU,Nx,Nz,7);
 		for(int i=0;i<Nx*Nz;i++)
-			generationBy[i]=0.0;//(byGPU[i]-byWeakGPU[i]*FPT(2.0))*FPT(2.0);
+			generationBy[i]=(byGPU[i]-byWeakGPU[i]*FPT(2.0))*FPT(2.0);
 		fadey_draw(generationBy,Nx,Nz,8);
 	}
 
-	//executor e(2);
+
+	executor e(2);
 	//calculate and save generation
+  map_timer tim;
 	while(hH->t < tMAX)
 	{
-		{
-			//timer t("TIMER: simple GPU step took");
-			//cool_dev(hH->device);
-			simpleGPUstep(hH);
-			//e.exec(&GPUstep, (void*) hH, 0);
-		}
-		/*
+	
+    e.exec(&GPUstep, (void*) hH, 0);
+		if(hH_weak)
+			e.exec(&GPUstep, (void*) hH_weak, 1);
+		e.sync();
+		
+		
 		if(hH_weak)
 		{
-			//cool_dev(hH_weak->device);
-			//simpleGPUstep(hH_weak);
-			e.exec(&GPUstep, (void*) hH_weak, 1);
+			if(hH_weak->t != hH->t || hH_weak->step != hH->step)
+			{
+				std::cerr << "weak and main are not syncronized, output filename is " << outputFilename << ", step is " << hH->step <<  " vs " << hH_weak->step << '\n';
+				return -1;
+			}
 		}
-		e.sync();
-		*/
+
+		if(hH->step % 100 == 0)
+		{
+	    tim.start("cool device");
+      cool_dev(hH->device);
+		  if(hH_weak)
+		   	cool_dev(hH_weak->device);
+      tim.stop("cool device");
+		}
+
 		if(hH->step % iter == 0)
 		{
 			bool have_Tserver=true;
@@ -424,15 +452,31 @@ int main(int argc, char* argv[])
 				break;
 			}
 
-			printf("iter #=%d, t=%g (target=%g)\n",hH->step,hH->t,tMAX);
-			
+      dev_d2h(hH, hH->By, byGPU, hH->Nx * hH->Nz);
+      dev_d2h(hH_weak, hH_weak->By, byWeakGPU, hH_weak->Nx * hH_weak->Nz);
+      FL_DBL bnorm = FL_DBL(0);
+      FL_DBL bweaknorm = FL_DBL(0);
+      FL_DBL bdiffnorm = FL_DBL(0);
+      for(int i=0 ; i!=hH->Nx * hH->Nz; i++)
+      {
+        bnorm += std::abs(byGPU[i]);
+        bweaknorm += std::abs(byWeakGPU[i]);
+        bdiffnorm += std::abs(byGPU[i] - FPT(2.0)*byWeakGPU[i]);
+      }
+			std::cout << "iter #=" << hH->step << ", t=" << hH->t << " (target=" << tMAX << "), bnorm=" << bnorm << ", bweaknorm=" << bweaknorm << ", bdiffnorm=" << bdiffnorm << "\n" << std::flush;
+      
 			if(DRAW)
 			{
 				GPUgetField(hH, ezGPU, exGPU, byGPU);
-				dev_d2h(hH, hH->Te, nGPU, hH->Nx * hH->Nz);
+				dev_d2h(hH, hH->Jz, jzGPU, hH->Nx * hH->Nz);
+				dev_d2h(hH, hH_weak->Jz, jxGPU, hH->Nx * hH->Nz);
+				for(int i=0;i<hH->Nx * hH->Nz;i++)
+					jzGPU[i]-=jxGPU[i] * FPT(2.0);
+				dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
 				for(int i(0); i != hH->Nx * hH->Nz; i++)
-					nGPU[i] = nGPU[i] == FPT(0.0) ? FPT(0.0) : nGPU[i]-hH->mediaTe0;
-				dev_d2h(hH, hH->n, nWeakGPU, hH->Nx * hH->Nz);
+					TeGPU[i] = TeGPU[i] == FPT(0.0) ? FPT(0.0) : TeGPU[i] - hH->mediaTe0;
+				
+        dev_d2h(hH, hH->n, nWeakGPU, hH->Nx * hH->Nz);
 				//for(int i=0;i<hH->Nx * hH->Nz;i++)
 				//	nWeakGPU[i]=(nWeakGPU[i]==FPT(0.0)) ? FPT(0.0) : nWeakGPU[i]-hH->mediaN0;
 
@@ -440,24 +484,26 @@ int main(int argc, char* argv[])
 					dev_d2h(hH_weak, hH_weak->By, byWeakGPU, hH->Nx * hH->Nz);
 
 				fadey_draw(byWeakGPU, Nx, Nz, 2);
+				fadey_draw(jzGPU, Nx, Nz, 0);
+				fadey_draw(jxGPU, Nx, Nz, 1);
 				fadey_draw(ezGPU, Nx, Nz, 3);
 				fadey_draw(exGPU, Nx, Nz, 4);
 				fadey_draw(byGPU, Nx, Nz, 5);
-				fadey_draw(nGPU, Nx, Nz, 6);
+				fadey_draw(TeGPU, Nx, Nz, 6);
 				fadey_draw(nWeakGPU, Nx, Nz, 7);
 				for(int i(0); i != Nx * Nz; i++)
-					generationBy[i] = 0.0;//(byGPU[i] - byWeakGPU[i] * FPT(2.0)) * FPT(2.0);
+					generationBy[i] = (byGPU[i] - byWeakGPU[i] * FPT(2.0)) * FPT(2.0);
 				fadey_draw(generationBy, Nx, Nz, 8);
 			}
 		}
 	}
-	//e.finish();
 	// ok we reached target time.
 	// now we want to average generated magnetic field over some period Tavg
 	// the trick here is to average taking into accout movig of the whole field picture with velocity V and shifting (iz0 changes during shifting)
 	FL_DBL* avg(nullptr);
 	if(Tavg > 0.0)
 	{
+		std::ofstream therm((outputFilename + "therm.dat").c_str());
 		std::cout << "averaging" << std::endl;
 		avg = new FL_DBL[hH->Nx * hH->Nz * 4];
 		for(int i(0); i != Nx * Nz * 4; i++)
@@ -465,9 +511,19 @@ int main(int argc, char* argv[])
 		FL_DBL Norm(0.0);
 		while(hH->t < tMAX + Tavg)
 		{
-			simpleGPUstep(hH);
+			e.exec(&GPUstep, (void*) hH, 0);
 			if(hH_weak)
-				simpleGPUstep(hH_weak);
+				e.exec(&GPUstep, (void*) hH_weak, 1);
+			e.sync();
+
+			if(hH_weak)
+			{
+				if(hH_weak->t != hH->t || hH_weak->step != hH->step)
+				{
+					std::cerr << "weak and main are not syncronized, output filename is " << outputFilename << ", step is " << hH->step <<  " vs " << hH_weak->step << '\n';
+					return -1;
+				}
+			}
 			
 			if(hH->step % iter == 0)
 			{
@@ -516,15 +572,32 @@ int main(int argc, char* argv[])
 			
 			}
 			Norm += FL_DBL(1.0);
+			
+			dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
+			FL_DBL TeMAX(.0);
+			for(int i(0); i != hH->Nx * hH->Nz; i++)
+				TeMAX = std::max(TeGPU[i] == FL_DBL(.0) ? FL_DBL(.0) : TeGPU[i] - mediaTe0, TeMAX);
+			therm << hH->t << '\t' << TeMAX << '\n';
 		}
 		for(int i(0); i != Nx * Nz * 4; i++)
 			avg[i] = avg[i] / Norm;
 		std::cout << "averaging is done, norm was " << Norm << std::endl;
+		therm.close();
 	}
-	
+	e.finish();
+
+	if(hH_weak)
+	{
+		if(hH_weak->t != hH->t || hH_weak->step != hH->step)
+		{
+			std::cerr << "weak and main are not syncronized (after finish), output filename is " << outputFilename << ", step is " << hH->step <<  " vs " << hH_weak->step << '\n';
+			return -1;
+		}
+	}
+
 	//get fields;
 	GPUgetField(hH, ezGPU, exGPU, byGPU);
-	dev_d2h(hH, hH->Te, nGPU, hH->Nx * hH->Nz);
+	dev_d2h(hH, hH->Te, TeGPU, hH->Nx * hH->Nz);
 	dev_d2h(hH, hH->n, nWeakGPU, hH->Nx * hH->Nz);
 	if(hH_weak)
 		dev_d2h(hH_weak, hH_weak->By, byWeakGPU, hH->Nx * hH->Nz);
@@ -532,7 +605,7 @@ int main(int argc, char* argv[])
 	for(int i(0); i!=hH->Nx * hH->Nz; i++)
 	{
 		if(nWeakGPU[i] != FPT(0.0))
-			nGPU[i] -= hH->mediaTe0;
+			TeGPU[i] -= hH->mediaTe0;
 	}
 */
 
@@ -549,17 +622,18 @@ int main(int argc, char* argv[])
 
 	dev_d2h(hH, hH->Jz, jzGPU, hH->Nx * hH->Nz);
 	dev_d2h(hH, hH->Jx, jxGPU, hH->Nx * hH->Nz);
+	dev_d2h(hH, hH->n, neGPU, hH->Nx * hH->Nz);
 
 	//store fields;
 	if(hH_weak)
 	{
 		if(avg)
-			dumpData(outputFilename, hH, std::vector<const FL_DBL*>{generationBy, avg, nGPU, byGPU, &avg[Nx * Nz], ezGPU, &avg[2 * Nx * Nz],  exGPU, &avg[3 * Nx * Nz]},std::vector<std::string>{"B_{generated}", "B_{gen_{avg}}", "Te", "B_y", "B_{y_{avg}}", "E_z", "E_{z_{avg}}", "E_x",  "E_{x_{avg}}"}, description.str());
+			dumpData(outputFilename, hH, std::vector<const FL_DBL*>{generationBy, avg, TeGPU, byGPU, &avg[Nx * Nz], ezGPU, &avg[2 * Nx * Nz],  exGPU, &avg[3 * Nx * Nz], neGPU}, std::vector<std::string>{"B_{generated}", "B_{gen_{avg}}", "Te", "B_y", "B_{y_{avg}}", "E_z", "E_{z_{avg}}", "E_x",  "E_{x_{avg}}", "n_e"}, description.str());
 		else
-			dumpData(outputFilename, hH, std::vector<const FL_DBL*>{generationBy, nGPU, byGPU, ezGPU, exGPU},std::vector<std::string>{"B_{generated}", "Te", "B_y", "E_z", "E_x"}, description.str());
+			dumpData(outputFilename, hH, std::vector<const FL_DBL*>{generationBy, TeGPU, byGPU, ezGPU, exGPU, neGPU},std::vector<std::string>{"B_{generated}", "Te", "B_y", "E_z", "E_x", "n_e"}, description.str());
 	}
 	else
-		dumpData(outputFilename, hH, std::vector<const FL_DBL*>{byGPU, ezGPU, exGPU, nGPU, jzGPU, jxGPU, nWeakGPU},std::vector<std::string>{"B_y", "E_z", "E_x", "Te", "j_z", "j_x", "n_e"}, description.str());
+		dumpData(outputFilename, hH, std::vector<const FL_DBL*>{byGPU, ezGPU, exGPU, TeGPU, jzGPU, jxGPU, nWeakGPU},std::vector<std::string>{"B_y", "E_z", "E_x", "Te", "j_z", "j_x", "n_e"}, description.str());
 
 	if(DRAW)
 		fadey_close();

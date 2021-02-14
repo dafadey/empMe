@@ -11,14 +11,14 @@ cell::~cell()
 		delete geo;
 }
 
-bool cell::inside(FL_DBL x, FL_DBL y) const
+bool cell::inside(double x, double y) const
 {
 	XY p((double)x, (double)y);
 //	return geo->is_inside(p);
 	return geo->is_inside_simple(p);
 }
 
-bool cell::load_from_svg(const char* filename, FL_DBL _lz)
+bool cell::load_from_svg(const char* filename, double _lz)
 {
 	lz = _lz;
 	std::vector<point> bb_nodes;
@@ -54,32 +54,32 @@ bool cell::load_from_svg(const char* filename, FL_DBL _lz)
     std::cerr << "failed to read bounding box from input svg file. did not you forgot to convert bb rectangle to path object?" << std::endl;
 		return false;
 	}
-	FL_DBL bbzmin =  std::numeric_limits<FL_DBL>::max();
-	FL_DBL bbzmax = -std::numeric_limits<FL_DBL>::max();
-	FL_DBL bbxmin =  std::numeric_limits<FL_DBL>::max();
+	double bbzmin =  std::numeric_limits<double>::max();
+	double bbzmax = -std::numeric_limits<double>::max();
+	double bbxmin =  std::numeric_limits<double>::max();
 	for(const auto& n : bb_nodes)
 	{
-		bbzmin = std::min(bbzmin, (FL_DBL) n.x);
-		bbzmax = std::max(bbzmax, (FL_DBL) n.x);
-		bbxmin = std::min(bbxmin, (FL_DBL) n.y);
+		bbzmin = std::min(bbzmin, (double) n.x);
+		bbzmax = std::max(bbzmax, (double) n.x);
+		bbxmin = std::min(bbxmin, (double) n.y);
 		std::cout << "\tbb:  " << n.x << ", " << n.y << std::endl;
 	}
-	FL_DBL real_lz = bbzmax - bbzmin;
-	FL_DBL f = lz / real_lz;
+	double real_lz = bbzmax - bbzmin;
+	double f = lz / real_lz;
 	geo = new POLY;
-	zmin =  std::numeric_limits<FL_DBL>::max();
-	zmax = -std::numeric_limits<FL_DBL>::max();
+	zmin =  std::numeric_limits<double>::max();
+	zmax = -std::numeric_limits<double>::max();
 	for(const auto& n : geo_nodes)
 	{
 		std::cout << "\tgeo: " << n.x << ", " << n.y << std::endl;
-		FL_DBL z = ((FL_DBL) n.x - bbzmin) * f;
-		FL_DBL x = ((FL_DBL) n.y - bbxmin) * f;
+		double z = ((double) n.x - bbzmin) * f;
+		double x = ((double) n.y - bbxmin) * f;
 		zmin = std::min(zmin, z);
 		zmax = std::max(zmax, z);
 		geo->points.push_back(newXY((double)z, (double)x));
 	}
 	geo->fill_edges();
-	//geo->fill_tree();
+	geo->fill_tree();
 	std::cout << "loaded geometry with zmin = " << zmin
 						<< ", zmax = " << zmax
 						<< ", number of nodes is " << geo->points.size()

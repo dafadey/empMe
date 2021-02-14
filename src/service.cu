@@ -1,5 +1,6 @@
-#include <math_constants.h>
-#include <cutil_inline.h>
+#include <helper_cuda.h>
+#include <helper_functions.h>
+#include <helper_timer.h>
 #include "funcall.h"
 
 extern "C"
@@ -9,7 +10,7 @@ void dev_alloc(hydro2dHandler* hH, void** pparr, int sz)
 		printf("ERROR Initializing device #%d\n",hH->device);
 	else
 	{
-		cutilSafeCall( cudaMalloc( pparr, sz*sizeof(FL_DBL)));
+		checkCudaErrors( cudaMalloc( pparr, sz*sizeof(FL_DBL)));
 		cudaThreadSynchronize();
 	}
 }
@@ -23,7 +24,7 @@ void dev_h2d(hydro2dHandler* hH, FL_DBL* host_arr, FL_DBL* dev_arr, int sz)
 		printf("ERROR Initializing device #%d\n",hH->device);
 	else
 	{
-		cutilSafeCall( cudaMemcpy( dev_arr, host_arr, sz*sizeof(FL_DBL), cudaMemcpyHostToDevice));
+		checkCudaErrors( cudaMemcpy( dev_arr, host_arr, sz*sizeof(FL_DBL), cudaMemcpyHostToDevice));
 		cudaThreadSynchronize();
 	}
 	//printf("\t\tdone\n");
@@ -37,7 +38,7 @@ void dev_d2h(const hydro2dHandler* hH, const FL_DBL* dev_arr, FL_DBL* host_arr, 
 		printf("ERROR Initializing device #%d\n",hH->device);
 	else
 	{
-		cutilSafeCall( cudaMemcpy( host_arr, dev_arr, sz*sizeof(FL_DBL), cudaMemcpyDeviceToHost));
+		checkCudaErrors( cudaMemcpy( host_arr, dev_arr, sz*sizeof(FL_DBL), cudaMemcpyDeviceToHost));
 		cudaThreadSynchronize();
 	}
 }

@@ -1,6 +1,11 @@
 #pragma once
 #include "defaults.h"
 
+#include <map>
+#include <string>
+#include <chrono>
+#include <iostream>
+
 #ifndef nullptr
 	#define nullptr 0
 #endif
@@ -10,8 +15,58 @@ void cpustep(int N_x, int N_z, FL_DBL* E_z, FL_DBL* E_x, FL_DBL* B_y, FL_DBL dx_
 struct cell;
 
 extern "C"
+struct chrono_data_wrapper
+{
+	chrono_data_wrapper() : t(std::chrono::high_resolution_clock::now()), dt(.0), count(0) {}
+	std::chrono::high_resolution_clock::time_point t;
+	double dt;
+	int count;
+};
+
+extern "C"
+struct map_timer
+{
+	map_timer() : data() {}
+
+  map_timer(const map_timer &obj) : data()
+  {
+    for(auto& it : obj.data)
+      data[it.first] = it.second;
+  }
+
+	std::map<std::string, chrono_data_wrapper> data;
+
+	void start(std::string s)
+	{
+		auto it = data.find(s);
+		if(it == data.end())
+			data[s] = chrono_data_wrapper();
+		else
+			it->second.t = std::chrono::high_resolution_clock::now();
+	}
+	
+	void stop(std::string s)
+	{
+		auto it = data.find(s);
+		if(it != data.end())
+		{
+			std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+			it->second.dt += std::chrono::duration<double>(t1 - it->second.t).count();
+			it->second.count ++;
+		}
+	}
+	
+	~map_timer()
+	{
+		for(const auto& it : data)
+			std::cout << it.first << " is " << it.second.dt / (double) it.second.count << " seconds per step, " << it.second.dt << " second overall\n";
+	}
+};
+
+extern "C"
 struct hydro2dHandler
 {
+	map_timer tim;
 	const int device; // deny moving to another device by switchig this field
 	//holds information about 
 	int Nx, Nz; // local
@@ -24,6 +79,8 @@ struct hydro2dHandler
 	FL_DBL* Px;
 	FL_DBL* Ez;
 	FL_DBL* Ex;
+	FL_DBL* Ez_mid;
+	FL_DBL* Ex_mid;
 	FL_DBL* By;
 	FL_DBL* Phtz;
 	FL_DBL* Phtx;
@@ -75,6 +132,7 @@ struct hydro2dHandler
 	FL_DBL mediaTe0; // effective temperatire of electrons
 	FL_DBL diffusion; // thermodiffusion
 	FL_DBL mediaNu;
+	FL_DBL NUTratio; // this is how nu depends on T : nu = mediaNu * (1.0 + NUTratio * Te)
 	FL_DBL landauDamping;
 	//effective electron massses
 	FL_DBL mz_1;
@@ -104,9 +162,10 @@ struct hydro2dHandler
 	const bool doPolarization; // never change this after construction! because reallocation will be needed
 	const bool doPhononAbsorbtion; // never change this after construction! because reallocation will be needed
 	const bool extSource;
+	const int JHEAT; // 0-E^2, 1-j^2, 2-j*E
 	bool toothDir; // positive/negative
 	bool flip; // if flip then tooths are below surface
-	hydro2dHandler(int /*dev*/, bool = false /*doPhononAbsorbtion*/, bool = false /*doPolarization*/, bool = false/*extSource*/);
+	hydro2dHandler(int /*dev*/, bool = false /*doPhononAbsorbtion*/, bool = false /*doPolarization*/, bool = false/*extSource*/, int = 0 /*JHEAT*/);
 	hydro2dHandler(const hydro2dHandler& obj, int dev = -1);
 private:
 	hydro2dHandler();
