@@ -1,0 +1,39 @@
+#!/bin/bash
+rm -f test_mGPU
+
+arch=CC30
+mrch=sm_30
+
+enable_double=""
+if [ -n "$1" ]
+then
+  if (("$1" == "double"))
+  then
+    enable_double="-DUSEDOUBLE"
+  fi
+fi
+
+MYTOOLS="/home/dan/tools"
+INC="-I/usr/local/cuda-9.0/include -I/usr/local/cuda-9.0/samples/common/inc -I${MYTOOLS}/include -I${MYTOOLS}/include/mesh1" #-I${MYTOOLS}/nvml/include 
+cuLIB="/usr/local/cuda-9.0/lib64"
+LIB="-L${cuLIB} -L${MYTOOLS}/lib" #-L${MYTOOLS}/nvml/lib64"
+fm= #--use_fast_math #coment it if you whant divisions and transcend funcs to be IEEE or something similar to IEEE
+echo "cleaning..."
+rm -f *.obj appl
+
+echo "compiling..."
+echo "   gpu..."
+/usr/local/cuda-9.0/bin/nvcc -w -Xcompiler -fPIC ${enable_double} $INC -O3 -c -arch=$mrch $fm src/simple.cu -o simple.obj
+/usr/local/cuda-9.0/bin/nvcc -w -Xcompiler -fPIC ${enable_double} $INC -O3 -c -arch=$mrch $fm src/service.cu -o service.obj
+
+echo "   cpu..."
+g++ $INC -std=c++11 ${enable_double} -Wall -Werror src/geo.cpp -c -O3 -o geo.obj
+g++ $INC -std=c++11 ${enable_double} -Wall -Werror src/test.cpp -c -O3 -fopenmp -o test.obj
+
+MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -ltclient -lgetGPUtemp" #-lnvidia-ml
+#MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -lgetGPUtemp" #-lgetGPUtemp #-lnvidia-ml
+
+echo "linking..."
+g++ $LIB geo.obj test.obj simple.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU
+
+rm -f *.obj
