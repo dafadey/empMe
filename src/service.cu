@@ -53,6 +53,9 @@ void GPUsetField(hydro2dHandler* hH, FL_DBL* E_z, FL_DBL* E_x, FL_DBL* B_y)
 		dev_h2d(hH, E_x, hH->Ex, hH->Nx * hH->Nz);
 		dev_h2d(hH, E_z, hH->Ez, hH->Nx * hH->Nz);
 		dev_h2d(hH, B_y, hH->By, hH->Nx * hH->Nz);
+		dev_h2d(hH, E_x, hH->Bx, hH->Nx * hH->Nz);
+		dev_h2d(hH, E_z, hH->Bz, hH->Nx * hH->Nz);
+		dev_h2d(hH, B_y, hH->Ey, hH->Nx * hH->Nz);
 	}
 }
 

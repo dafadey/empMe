@@ -5,6 +5,7 @@
 #include <string>
 #include <chrono>
 #include <iostream>
+#include <vector>
 
 #ifndef nullptr
 	#define nullptr 0
@@ -74,45 +75,66 @@ struct hydro2dHandler
 	int ix0,iz0; // position in global mesh
 	FL_DBL dx_1,dz_1,dt;
 	FL_DBL* Ptz;
+	FL_DBL* Pty;
 	FL_DBL* Ptx;
 	FL_DBL* Pz;
+	FL_DBL* Py;
 	FL_DBL* Px;
 	FL_DBL* Ez;
 	FL_DBL* Ex;
+	FL_DBL* Ey;
 	FL_DBL* Ez_mid;
+	FL_DBL* Ey_mid;
 	FL_DBL* Ex_mid;
 	FL_DBL* By;
+	FL_DBL* Bz;
+	FL_DBL* Bx;
 	FL_DBL* Phtz;
+	FL_DBL* Phty;
 	FL_DBL* Phtx;
 	FL_DBL* Phz;
+	FL_DBL* Phy;
 	FL_DBL* Phx;
 	FL_DBL* Jz;
 	FL_DBL* Jx;
+	FL_DBL* Jy;
 	FL_DBL* mat_mask;
 	FL_DBL* n;
 	FL_DBL* Te;
 	FL_DBL* dTe;
 	FL_DBL* nlx;
+	FL_DBL* nly;
 	FL_DBL* nlz;
 	FL_DBL* vx;
+	FL_DBL* vy;
 	FL_DBL* vz;
 	FL_DBL* PML_Byx; // helper fields required for PML
 	FL_DBL* PML_Byz; // helper fields required for PML
+
+	FL_DBL* PML_Eyx; // helper fields required for PML
+	FL_DBL* PML_Eyz; // helper fields required for PML
+
   //feed arrays
 	FL_DBL* feedPtz;
 	FL_DBL* feedPtx;
 	FL_DBL* feedPz;
 	FL_DBL* feedPx;
 	FL_DBL* feedEz;
+	FL_DBL* feedEy;
 	FL_DBL* feedEx;
+	FL_DBL* feedBz;
 	FL_DBL* feedBy;
+	FL_DBL* feedBx;
 	FL_DBL* feedPML_Byx;
 	FL_DBL* feedPML_Byz;
+	FL_DBL* feedPML_Eyx;
+	FL_DBL* feedPML_Eyz;
 	FL_DBL* feedPhtz;
 	FL_DBL* feedPhtx;
 	FL_DBL* feedPhz;
 	FL_DBL* feedPhx;
 	FL_DBL* feedJz;
+	FL_DBL* feedJy;
 	FL_DBL* feedJx;
 	FL_DBL* feed_mat_mask;
 	FL_DBL* feedn;
@@ -137,8 +159,9 @@ struct hydro2dHandler
 	FL_DBL NUTratio; // this is how nu depends on T : nu = mediaNu * (1.0 + NUTratio * Te)
 	FL_DBL landauDamping;
 	//effective electron massses
-	FL_DBL mz_1;
 	FL_DBL mx_1;
+	FL_DBL my_1;
+	FL_DBL mz_1;
 	//media geometry
 	FL_DBL toothDepth;
 	FL_DBL toothWidth;
@@ -155,10 +178,15 @@ struct hydro2dHandler
 	FL_DBL media_phonon_beta;
 	//source parameters
 	FL_DBL srcTfactor; // factor for thermal source
-	FL_DBL srcAmp;
+	std::vector<FL_DBL> srcAmp;
+	std::vector<FL_DBL> srcAmpTE;
+	std::vector<FL_DBL> srcPhaseTE;
+	std::vector<FL_DBL> srcPhase;
 	FL_DBL srcVelocity;
-	FL_DBL srcT;
-	FL_DBL srcNosc;
+	std::vector<FL_DBL> srcT;
+	std::vector<FL_DBL> srcTTE;
+	std::vector<FL_DBL> srcNoscTE;
+	std::vector<FL_DBL> srcNosc;
 	FL_DBL srcX;
 	FL_DBL switchOnDelay;
 	const bool doPolarization; // never change this after construction! because reallocation will be needed

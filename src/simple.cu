@@ -4,6 +4,7 @@
 #include "funcall.h"
 #include <iostream>
 #include "geo.h"
+#include "helpers.h"
 #include <cmath>
 
 //-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION
@@ -19,9 +20,9 @@
 extern "C"
 hydro2dHandler::hydro2dHandler(int dev, bool _doPhononAbsorbtion, bool _doPolarization, bool _extSource, int _JHEAT) :
 								tim(), device(dev), Nx(NX), Nz(NZ), Lx(LX), Lz(LZ), ix0(0), iz0(0), dx_1(0), dz_1(0), dt(0),
-								Ptz(nullptr), Ptx(nullptr), Pz(nullptr), Px(nullptr), Ez(nullptr), Ex(nullptr), By(nullptr), Phtz(nullptr), Phtx(nullptr), Phz(nullptr), Phx(nullptr), Jz(nullptr), Jx(nullptr), mat_mask(nullptr), n(nullptr), Te(nullptr), dTe(nullptr), nlx(nullptr), nlz(nullptr), vx(nullptr), vz(nullptr), PML_Byx(nullptr), PML_Byz(nullptr), feedPtz(nullptr), feedPtx(nullptr), feedPz(nullptr), feedPx(nullptr), feedEz(nullptr), feedEx(nullptr), feedBy(nullptr), feedPML_Byx(nullptr), feedPML_Byz(nullptr), feedPhtz(nullptr), feedPhtx(nullptr), feedPhz(nullptr), feedPhx(nullptr), feedJz(nullptr), feedJx(nullptr), feed_mat_mask(nullptr), feedn(nullptr), feedTe(nullptr), srcx(nullptr), srct(nullptr), host_feed(nullptr), host_srct(nullptr),
+								Ptz(nullptr), Pty(nullptr), Ptx(nullptr), Pz(nullptr), Py(nullptr), Px(nullptr), Ez(nullptr), Ey(nullptr), Ex(nullptr), Bz(nullptr), By(nullptr), Bx(nullptr), Phtz(nullptr), Phty(nullptr), Phtx(nullptr), Phz(nullptr), Phy(nullptr), Phx(nullptr), Jz(nullptr), Jy(nullptr), Jx(nullptr), mat_mask(nullptr), n(nullptr), Te(nullptr), dTe(nullptr), nlx(nullptr), nly(nullptr), nlz(nullptr), vx(nullptr), vy(nullptr), vz(nullptr), PML_Byx(nullptr), PML_Byz(nullptr), PML_Eyx(nullptr), PML_Eyz(nullptr), feedPtz(nullptr), feedPtx(nullptr), feedPz(nullptr), feedPx(nullptr), feedEz(nullptr), feedEx(nullptr), feedBy(nullptr), feedPML_Byx(nullptr), feedPML_Byz(nullptr), feedPhtz(nullptr), feedPhtx(nullptr), feedPhz(nullptr), feedPhx(nullptr), feedJz(nullptr), feedJx(nullptr), feed_mat_mask(nullptr), feedn(nullptr), feedTe(nullptr), srcx(nullptr), srct(nullptr), host_feed(nullptr), host_srct(nullptr),
 								t(0), step(0), PMLimin(0), PMLimax(0), SRCi(0), shft(SHIFTGRANULARITY), blockSize(BS), PMLxmax(PMLX), PMLstrength(PMLSTRENGTH),
-								mediaN0(N0), mediaTe0(TE0),diffusion(DIFFUSION), mediaNu(MEDIANU), NUTratio(NUTRATIO), landauDamping(LANDAUDAMPING), mz_1(MZ_1), mx_1(MX_1), toothDepth(TOOTHDEPTH), toothWidth(TOOTHWIDTH), mediaDepth(MEDIADEPTH), a_cell(nullptr), media_bound_w2(BOUND_W2), media_bound_gamma(BOUND_GAMMA), media_bound_beta(BOUND_BETA), media_phonon_omega(PHONON_OMEGA), media_phonon_phw(PHONON_PHW), media_phonon_beta(PHONON_BETA), srcTfactor(SRCTFACTOR), srcAmp(SRCAMP), srcVelocity(VELOCITY), srcT(SRCT), srcNosc(SRCNOSC), srcX(SRCX), switchOnDelay(SWITCHONDELAY),
+								mediaN0(N0), mediaTe0(TE0),diffusion(DIFFUSION), mediaNu(MEDIANU), NUTratio(NUTRATIO), landauDamping(LANDAUDAMPING), mx_1(MX_1), my_1(MY_1), mz_1(MZ_1), toothDepth(TOOTHDEPTH), toothWidth(TOOTHWIDTH), mediaDepth(MEDIADEPTH), a_cell(nullptr), media_bound_w2(BOUND_W2), media_bound_gamma(BOUND_GAMMA), media_bound_beta(BOUND_BETA), media_phonon_omega(PHONON_OMEGA), media_phonon_phw(PHONON_PHW), media_phonon_beta(PHONON_BETA), srcTfactor(SRCTFACTOR), srcVelocity(VELOCITY), srcX(SRCX), switchOnDelay(SWITCHONDELAY),
 								doPolarization(_doPolarization),  doPhononAbsorbtion(_doPhononAbsorbtion), extSource(_extSource), JHEAT(_JHEAT),
 								toothDir(false), flip(false), linear(false) {}
 
@@ -79,6 +80,21 @@ simpleE_Kernel(int Nx, int Nz, FL_DBL* Ez, FL_DBL* Ex, FL_DBL* By, FL_DBL* Jz, F
   }
 }
 
+//TE TE TE  Bx Bz
+__global__ void
+simpleB_TE_Kernel(int Nx, int Nz, FL_DBL* Bz, FL_DBL* Bx, FL_DBL* Ey, int ix0, int iz0, FL_DBL dx, FL_DBL dx_1, FL_DBL dz, FL_DBL dz_1, FL_DBL dt, FL_DBL* srct, int srci, int PMLimin, int PMLimax, FL_DBL pml, FL_DBL pmlx)
+{
+	const int j=threadIdx.x+blockIdx.x*blockDim.x;
+	const int i=threadIdx.y+blockIdx.y*blockDim.y;
+	if(i >= 0 && i < Nz && j >= 0 && j < Nx)
+	{
+		Bz[i*Nx+j] = Bz[i*Nx+j] * (( j+ix0<PMLimin || j+ix0>PMLimax ) ? PML(FL_DBL((j+ix0<PMLimin)?j+ix0:Nx-1-j)*dx, pmlx, pml):FPT(1.0)) + ((Ey[i*Nx+j] - (j==0 ? Bz[i*Nx+j] : Ey[i*Nx+j-1])) * dx_1 + /*source*/(srct && j + ix0 == srci ? srct[i] * dx_1 : FPT(0.0))) * dt;
+
+    Bx[i*Nx+j] += ((i==0 ? FPT(0.0) : Ey[(i-1)*Nx+j]) - Ey[i*Nx+j]) * dz_1 * dt;
+    
+  }
+}
+
 __global__ void
 simpleB_Kernel(int Nx, int Nz, FL_DBL* Ez, FL_DBL* Ex, FL_DBL* By, int ix0, int iz0, FL_DBL dx, FL_DBL dx_1, FL_DBL dz, FL_DBL dz_1, FL_DBL dt, int PMLimin, int PMLimax, FL_DBL pml, FL_DBL pmlx, FL_DBL* PML_Byz, FL_DBL* PML_Byx)
 {
@@ -101,12 +117,43 @@ simpleB_Kernel(int Nx, int Nz, FL_DBL* Ez, FL_DBL* Ex, FL_DBL* By, int ix0, int 
 			By[i*Nx+j]=PML_Byz[i*Nx+j]+PML_Byx[i*Nx+j];
 		}
 		else
-			By[i*Nx+j]+=(-(Ez[i*Nx+j]-Ez[i*Nx+j-1])*dx_1+(Ex[i*Nx+j]-((i==0)?FPT(0.0):Ex[(i-1)*Nx+j]))*dz_1)*dt;
+			By[i*Nx+j]+=(-(Ez[i*Nx+j]-Ez[i*Nx+j-1])*dx_1+(Ex[i*Nx+j]-(i==0 ? FPT(0.0) : Ex[(i-1)*Nx+j]))*dz_1)*dt;
 	}
 }
 
+
+//TE TE TE  Ey
 __global__ void
-simpleV_Kernel(int Nx, int Nz, FL_DBL* vz, FL_DBL* vx, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* n, FL_DBL n0)
+simpleE_TE_Kernel(int Nx, int Nz, FL_DBL* Bz, FL_DBL* Bx, FL_DBL* Ey, FL_DBL* Jy, int ix0, int iz0, FL_DBL dx, FL_DBL dx_1, FL_DBL dz, FL_DBL dz_1, FL_DBL dt, int PMLimin, int PMLimax, FL_DBL pml, FL_DBL pmlx, FL_DBL* PML_Eyz, FL_DBL* PML_Eyx, FL_DBL* Ey_mid)
+{
+	const int j=threadIdx.x+blockIdx.x*blockDim.x;
+	const int i=threadIdx.y+blockIdx.y*blockDim.y;
+	if(i >= 0 && i < Nz && j >= 0 && j < Nx)
+	{
+		FL_DBL E_prev = Ey[i*Nx+j];
+		FL_DBL E_next = E_prev;
+		if(j+ix0<PMLimin)
+		{
+			PML_Eyz[i*Nx+j]=PML_Eyz[i*Nx+j]+(Bx[i*Nx+j]-(i+1==Nz ? FPT(0.0) : Bx[(i+1)*Nx+j]))*dz_1*dt;
+			PML_Eyx[i*Nx+j]=PML_Eyx[i*Nx+j]*PML(FL_DBL(j+ix0)*dx, pmlx, pml)+(Bz[i*Nx+j+1] - Bz[i*Nx+j])*dx_1*dt;
+			E_next=PML_Eyz[i*Nx+j]+PML_Eyx[i*Nx+j] - Jy[i*Nx+j]*dt;
+		}
+		else if(j+ix0>PMLimax)
+		{
+			PML_Eyz[i*Nx+j]=PML_Eyz[i*Nx+j]+(Bx[i*Nx+j]-(i+1==Nz ? FPT(0.0) : Bx[(i+1)*Nx+j]))*dz_1*dt;
+			PML_Eyx[i*Nx+j]=PML_Eyx[i*Nx+j]*PML(FL_DBL(Nx-1-j)*dx, pmlx, pml)+((j+ix0+1==Nz ? FPT(0.0) : Bz[i*Nx+j+1])-Bz[i*Nx+j])*dx_1*dt;
+			E_next=PML_Eyz[i*Nx+j]+PML_Eyx[i*Nx+j] - Jy[i*Nx+j]*dt;
+		}
+		else
+			E_next+=((Bz[i*Nx+j+1]-Bz[i*Nx+j])*dx_1-((i+1==Nz ? FPT(0.0) : Bx[(i+1)*Nx+j])-Bx[i*Nx+j])*dz_1 - Jy[i*Nx+j])*dt;
+		Ey_mid[i*Nx+j] = FL_DBL(.5)*(E_next+E_prev);
+		Ey[i*Nx+j] = E_next;
+	}
+}
+
+
+__global__ void
+simpleV_Kernel(int Nx, int Nz, FL_DBL* vx, FL_DBL* vy, FL_DBL* vz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* n, FL_DBL n0)
 {
 	const int j=threadIdx.x+blockIdx.x*blockDim.x;
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
@@ -121,16 +168,18 @@ simpleV_Kernel(int Nx, int Nz, FL_DBL* vz, FL_DBL* vx, FL_DBL* Jz, FL_DBL* Jx, F
     
 		int im1 = i == 0 ? i : i - 1;
 		int jm1 = j == 0 ? j : j - 1;
-		FL_DBL n_z = (n[i*Nx+j] + n[im1*Nx+j]) * FPT(0.5) + n0;
-		FL_DBL n_x = (n[i*Nx+j] + n[i*Nx+jm1]) * FPT(0.5) + n0;
+		const FL_DBL n_z = (n[i*Nx+j] + n[im1*Nx+j]) * FPT(0.5) + n0;
+		const FL_DBL n_x = (n[i*Nx+j] + n[i*Nx+jm1]) * FPT(0.5) + n0;
+		const FL_DBL n_y = n[i*Nx+j] + n0;
 				
 		vz[i*Nx+j] = (n_z > FPT(0.0)) ? Jz[i*Nx+j] / n_z : FPT(0.0);
 		vx[i*Nx+j] = (n_x > FPT(0.0)) ? Jx[i*Nx+j] / n_x : FPT(0.0);
+		vy[i*Nx+j] = (n_y > FPT(0.0)) ? Jy[i*Nx+j] / n_y : FPT(0.0);
 	}
 }
 
 __global__ void
-simpleNl_Kernel(int Nx, int Nz, FL_DBL* nlz, FL_DBL* nlx, FL_DBL* vz, FL_DBL* vx, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* By, FL_DBL dz_1, FL_DBL dx_1, FL_DBL mz_1, FL_DBL mx_1)
+simpleNl_Kernel(int Nx, int Nz, FL_DBL* nlx, FL_DBL* nly, FL_DBL* nlz, FL_DBL* vx, FL_DBL* vy, FL_DBL* vz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Bx, FL_DBL* By, FL_DBL* Bz, FL_DBL dz_1, FL_DBL dx_1, FL_DBL mx_1, FL_DBL my_1, FL_DBL mz_1)
 {
 	const int j=threadIdx.x+blockIdx.x*blockDim.x;
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
@@ -144,14 +193,18 @@ simpleNl_Kernel(int Nx, int Nz, FL_DBL* nlz, FL_DBL* nlx, FL_DBL* vz, FL_DBL* vx
 		nlz[i*Nx+j]=
 					HYDROZSRC*(Jz[i*Nx+j]*(vz[ip1*Nx+j]-vz[im1*Nx+j])*FPT(0.5)*dz_1+FPT(0.25)*(Jx[i*Nx+j]+Jx[i*Nx+jp1]+Jx[im1*Nx+j]+Jx[im1*Nx+jp1])*(vz[i*Nx+jp1]-vz[i*Nx+jm1])*FPT(0.5)*dx_1)
 					+MAINSRC*vz[i*Nx+j]*((Jx[i*Nx+jp1]+Jx[im1*Nx+jp1]-Jx[i*Nx+j]-Jx[im1*Nx+j])*FPT(0.5)*dx_1+(Jz[ip1*Nx+j]-Jz[im1*Nx+j])*FPT(0.5)*dz_1)
-					+(Jx[i*Nx+j]+Jx[im1*Nx+j]+Jx[i*Nx+jp1]+Jx[im1*Nx+jp1])*(By[i*Nx+j]+By[i*Nx+jp1])*FPT(0.125)*mz_1*HSRC;
+					+((Jx[i*Nx+j]+Jx[im1*Nx+j]+Jx[i*Nx+jp1]+Jx[im1*Nx+jp1])*(By[i*Nx+j]+By[i*Nx+jp1])*FPT(0.125)-(Jy[im1*Nx+j]+Jy[i*Nx+j])*Bx[i*Nx+j]*FPT(0.5))*mz_1*HSRC;
 
 
 		nlx[i*Nx+j]=
 					HYDROXSRC*(FPT(0.25)*(Jz[i*Nx+j]+Jz[i*Nx+jm1]+Jz[ip1*Nx+j]+Jz[ip1*Nx+jm1])*(vx[ip1*Nx+j]-vx[im1*Nx+j])*FPT(0.5)*dz_1+Jx[i*Nx+j]*(vx[i*Nx+jp1]-vx[i*Nx+jm1])*FPT(0.5)*dx_1)
 					+PRESSURESRC*vx[i*Nx+j]*((Jx[i*Nx+jp1]-Jx[i*Nx+jm1])*dx_1*FPT(0.5)+(Jz[ip1*Nx+j]+Jz[ip1*Nx+jm1]-Jz[i*Nx+j]-Jz[i*Nx+jm1])*dz_1*FPT(0.5))
-					-(Jz[i*Nx+j]+Jz[ip1*Nx+j]+Jz[i*Nx+jm1]+Jz[ip1*Nx+jm1])*(By[ip1*Nx+j]+By[i*Nx+j])*FPT(0.125)*mx_1*HSRC;
+					+(-(Jz[i*Nx+j]+Jz[ip1*Nx+j]+Jz[i*Nx+jm1]+Jz[ip1*Nx+jm1])*(By[ip1*Nx+j]+By[i*Nx+j])*FPT(0.125)+(Jy[i*Nx+jm1]+Jy[i*Nx+j])*Bz[i*Nx+j]*FPT(0.5))*mx_1*HSRC;
 
+		nly[i*Nx+j]=
+					HYDROYSRC*(FPT(0.5)*(Jz[i*Nx+j]+Jz[ip1*Nx+j])*(vy[ip1*Nx+j]-vy[im1*Nx+j])*FPT(0.5)*dz_1+FPT(0.5)*(Jx[i*Nx+j]+Jx[i*Nx+jp1])*(vy[i*Nx+jp1]-vy[i*Nx+jm1])*FPT(0.5)*dx_1)
+					+MAINSRC*vy[i*Nx+j]*((Jx[i*Nx+jp1]-Jx[i*Nx+j])*dx_1+(Jz[ip1*Nx+j]-Jz[i*Nx+j])*dz_1)
+					+((Jz[i*Nx+j]+Jz[ip1*Nx+j])*(Bx[ip1*Nx+j]+Bx[i*Nx+j]) + (Jx[i*Nx+j]+Jz[i*Nx+jp1])*(Bz[i*Nx+jp1]+Bz[i*Nx+j]))*FPT(0.25)*my_1*HSRC;
 	}
 }
 
@@ -255,7 +308,7 @@ simple_Te_Kernel(int Nx, int Nz, FL_DBL* dTe, FL_DBL* Te, FL_DBL dt)
 }
 
 __global__ void
-simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* Ez, FL_DBL* Ex, FL_DBL* nlz, FL_DBL* nlx, FL_DBL* n, FL_DBL* Te, FL_DBL NUTratio, FL_DBL mediaTe0, FL_DBL dx_1, FL_DBL dz_1, FL_DBL dt, FL_DBL Nu, FL_DBL landauDamping, FL_DBL* phv_z,  FL_DBL* phv_x, FL_DBL* ph_z, FL_DBL* ph_x, FL_DBL mz_1, FL_DBL mx_1, FL_DBL omegaOpt /*media_phonon_omega*/, FL_DBL PHW /*media_phonon_phw*/, FL_DBL OPT_PH /*media_phonon_beta*/, bool do_phonons, FL_DBL n0, FL_DBL* mat_mask, bool hh_linear)
+simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, FL_DBL* Ey, FL_DBL* Ez, FL_DBL* nlx, FL_DBL* nly, FL_DBL* nlz, FL_DBL* n, FL_DBL* Te, FL_DBL NUTratio, FL_DBL mediaTe0, FL_DBL dx_1, FL_DBL dz_1, FL_DBL dt, FL_DBL Nu, FL_DBL landauDamping, FL_DBL* phv_z, FL_DBL* phv_x, FL_DBL* ph_z, FL_DBL* ph_x, FL_DBL mx_1, FL_DBL my_1,FL_DBL mz_1, FL_DBL omegaOpt /*media_phonon_omega*/, FL_DBL PHW /*media_phonon_phw*/, FL_DBL OPT_PH /*media_phonon_beta*/, bool do_phonons, FL_DBL n0, FL_DBL* mat_mask, bool hh_linear)
 {
 	const int j=threadIdx.x+blockIdx.x*blockDim.x;
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
@@ -270,28 +323,31 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* Ez, FL_DBL* Ex, F
 
 		const FL_DBL mask_z = mat_mask[i*Nx+j] == mat_mask[im1*Nx+j] ? mat_mask[i*Nx+j] : FPT(0.0);
 		const FL_DBL mask_x = mat_mask[i*Nx+j] == mat_mask[i*Nx+jm1] ? mat_mask[i*Nx+j] : FPT(0.0);
+		const FL_DBL mask_y = mat_mask[i*Nx+j];
 
-    if(mask_x == FPT(0.0) && mask_z == FPT(0.0))
+    if(mask_x == FPT(0.0) && mask_z == FPT(0.0) && mask_y == FPT(0.0))
       return;
 
     FL_DBL n_z = mask_z > FPT(0.0) ? (n[i*Nx+j] + n[im1*Nx+j]) * FPT(0.5) : FPT(0.0);
-    FL_DBL n0_z = mask_z > FPT(0.0) ? n0 : FPT(0.0);
-    //n_z = n_z + n0 < FPT(0.0) ? -n0 : n_z;
+    const FL_DBL n0_z = mask_z > FPT(0.0) ? n0 : FPT(0.0);
     n_z = (n_z + n0_z) < FPT(0.0) ? -n0_z : n_z;
 
 		FL_DBL n_x = mask_x > FPT(0.0) ? (n[i*Nx+j] + n[i*Nx+jm1]) * FPT(0.5) : FPT(0.0);
-		FL_DBL n0_x = mask_x > FPT(0.0) ? n0 : FPT(0.0);
-    //n_x = n_x + n0 < FPT(0.0) ? -n0 : n_x;
+		const FL_DBL n0_x = mask_x > FPT(0.0) ? n0 : FPT(0.0);
     n_x = (n_x + n0_x) < FPT(0.0) ? -n0_x : n_x;
+
+		FL_DBL n_y = n[i*Nx+j];
+		const FL_DBL n0_y = mask_y > FPT(0.0) ? n0 : FPT(0.0);
+    n_y = (n_y + n0_y) < FPT(0.0) ? -n0_y : n_y;
 
     n_z = MAINSRC == OFF || hh_linear ? FPT(0.0) : n_z;
     n_x = PRESSURESRC == OFF || hh_linear ? FPT(0.0) : n_x;
 
 
-    FL_DBL Te_z = FPT(0.5) * (Te[i*Nx+j] + Te[im1*Nx+j]);
+    const FL_DBL Te_z = FPT(0.5) * (Te[i*Nx+j] + Te[im1*Nx+j]);
 
 
- 		FL_DBL Nu_z = (mask_z == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_z)) );
+ 		const FL_DBL Nu_z = (mask_z == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_z)) );
 
 /*
  		FL_DBL Nu_z = (mask_z == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + FPT(5.0) * NUTratio * SQRTNUT(Te_z)) / (FPT(1.0) + SQRTNUT(Te_z / mediaTe0)));
@@ -301,9 +357,9 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* Ez, FL_DBL* Ex, F
  		FL_DBL Nu_z = (mask_z == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_z)) / (FPT(1.0) + FPT(5.0) * SQRTNUT(Te_z / mediaTe0)));
 */
     
-    FL_DBL Te_x = FPT(0.5) * (Te[i*Nx+j] + Te[i*Nx+jm1]);
+    const FL_DBL Te_x = FPT(0.5) * (Te[i*Nx+j] + Te[i*Nx+jm1]);
 
-		FL_DBL Nu_x = (mask_x == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_x)) );	
+		const FL_DBL Nu_x = (mask_x == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_x)) );	
 
     
     /*
@@ -312,6 +368,11 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* Ez, FL_DBL* Ex, F
 /*    
 		FL_DBL Nu_x = (mask_x == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_x)) / (FPT(1.0) + FPT(5.0) * SQRTNUT(Te_x / mediaTe0)));	
 */
+
+
+    const FL_DBL Te_y = Te[i*Nx+j];
+
+		FL_DBL Nu_y = (mask_y == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_y)) );
 
     	
 		FL_DBL Jz_t = landauDamping*(Jz[i*Nx+jp1]+Jz[i*Nx+jm1]-FPT(2.0)*Jz[i*Nx+j])*dx_1*dx_1-Jz[i*Nx+j] * Nu_z 
@@ -347,6 +408,12 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* Ez, FL_DBL* Ex, F
 */
     //FL_DBL Jx_t = (n_x + n0_x) * Ex[i*Nx+j] - (n[i*Nx+j] * Te[i*Nx+j] - n[i*Nx+jm1] * Te[i*Nx+jm1] + mediaTe0 * (n[i*Nx+j] - n[i*Nx+jm1])) * dx_1;
 
+
+
+		FL_DBL Jy_t = landauDamping*(Jy[ip1*Nx+j]+Jy[im1*Nx+j]-FPT(2.0)*Jy[i*Nx+j])*dz_1*dz_1 - Jy[i*Nx+j] * Nu_y
+                  + my_1 * (n_y + n0_y) * Ey[i*Nx+j] - (hh_linear ? FPT(0.0) : IFNONLIN*nly[i*Nx+j]);
+
+
 		if(do_phonons)
 		{
 			Jz[i*Nx+j] += (Jz_t - omegaOpt*omegaOpt*ph_z[i*Nx+j]) * dt;
@@ -356,11 +423,13 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jz, FL_DBL* Jx, FL_DBL* Ez, FL_DBL* Ex, F
 		{
 			Jz[i*Nx+j] += Jz_t * dt;
 			Jx[i*Nx+j] += Jx_t * dt;
+			Jy[i*Nx+j] += Jy_t * dt;
 		}
 		
 		//put zeros at plasma surface
 		Jx[i*Nx+j] = mask_x == FPT(0.0) ? FPT(0.0) : Jx[i*Nx+j];
 		Jz[i*Nx+j] = mask_z == FPT(0.0) ? FPT(0.0) : Jz[i*Nx+j];
+		Jy[i*Nx+j] = mask_y == FPT(0.0) ? FPT(0.0) : Jy[i*Nx+j];
 
 		if(do_phonons)
 		{
@@ -438,6 +507,13 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 		cudaThreadSynchronize();
 		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Ex, hH->Ptx, hH->shft, hH->feedEx);
 		cudaThreadSynchronize();
+		//TE:
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Py, hH->vy, hH->shft, hH->feedEy);
+		cudaThreadSynchronize();
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Pty, hH->Py, hH->shft, hH->feedEy);
+		cudaThreadSynchronize();
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Ey, hH->Pty, hH->shft, hH->feedEy);
+		cudaThreadSynchronize();
 	}
 	else
 	{
@@ -445,7 +521,11 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 		cudaThreadSynchronize();
 		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Ex, hH->vx, hH->shft, hH->feedEx);
 		cudaThreadSynchronize();
+		//TE:
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Ey, hH->vy, hH->shft, hH->feedEy);
+		cudaThreadSynchronize();
 	}
+	
 	if(doPhononAbsorbtion)
 	{
 		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Phtz, hH->Ez, hH->shft, hH->feedJz);
@@ -460,12 +540,22 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 		cudaThreadSynchronize();
 		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jx, hH->Phx, hH->shft, hH->feedJx);
 		cudaThreadSynchronize();
+		//TE:
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Phty, hH->Ey, hH->shft, hH->feedEy);
+		cudaThreadSynchronize();
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Phy, hH->Phty, hH->shft, hH->feedEy);
+		cudaThreadSynchronize();
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jy, hH->Phy, hH->shft, hH->feedEy);
+		cudaThreadSynchronize();
 	}
 	else
 	{
 		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jz, hH->Ez, hH->shft, hH->feedJz);
 		cudaThreadSynchronize();
 		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jx, hH->Ex, hH->shft, hH->feedJx);
+		cudaThreadSynchronize();
+		//TE:
+		shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jy, hH->Ey, hH->shft, hH->feedJy);
 		cudaThreadSynchronize();
 	}
 	shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->By, hH->Jz, hH->shft, hH->feedBy);
@@ -488,6 +578,15 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 	shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->mat_mask , hH->PML_Byx, hH->shft, hH->feed_mat_mask);
 	cudaThreadSynchronize();
 
+//TE:
+	shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->PML_Eyx, hH->Jy, hH->shft, hH->feedPML_Eyx);
+	cudaThreadSynchronize();
+	shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->PML_Eyz, hH->PML_Eyx, hH->shft, hH->feedPML_Eyz);
+	cudaThreadSynchronize();
+	shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Bz, hH->PML_Eyz, hH->shft, hH->feedBz);
+	cudaThreadSynchronize();
+	shift_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Bx, hH->Bz, hH->shft, hH->feedBx);
+	cudaThreadSynchronize();
 //roll pointers:
 	FL_DBL* new_Ez = 0;
 	FL_DBL* new_Ex = 0;
@@ -495,6 +594,10 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 	FL_DBL* new_Px = 0;
 	FL_DBL* new_Ptz = 0;
 	FL_DBL* new_Ptx = 0;
+	//TE:
+	FL_DBL* new_Ey = 0;
+	FL_DBL* new_Py = 0;
+	FL_DBL* new_Pty = 0;
 	
 	if(doPolarization)
 	{
@@ -504,11 +607,17 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 		new_Ptx=hH->Px;
 		new_Ez=hH->Ptz;
 		new_Ex=hH->Ptx;
+		//TE:
+		new_Py=hH->vy;
+		new_Pty=hH->Py;
+		new_Ey=hH->Pty;
 	}
 	else
 	{
 		new_Ez=hH->vz;
 		new_Ex=hH->vx;
+		//TE:
+		new_Ey=hH->vy;
 	}
 	
 	FL_DBL* new_Jz = 0;
@@ -517,6 +626,10 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 	FL_DBL* new_Phtx = 0;
 	FL_DBL* new_Phz = 0;
 	FL_DBL* new_Phx = 0;
+	//TE:
+	FL_DBL* new_Jy = 0;
+	FL_DBL* new_Phty = 0;
+	FL_DBL* new_Phy = 0;
 
 	if(doPhononAbsorbtion)
 	{
@@ -526,11 +639,17 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 		new_Phx=hH->Phtx;
 		new_Jz=hH->Phz;
 		new_Jx=hH->Phx;
+		//TE:
+		new_Phty=hH->Ey;
+		new_Phy=hH->Phty;
+		new_Jy=hH->Phy;
 	}
 	else
 	{
 		new_Jz=hH->Ez;
 		new_Jx=hH->Ex;
+		//TE:
+		new_Jy=hH->Ey;
 	}
 	FL_DBL* new_By=hH->Jz;
 	FL_DBL* new_n =hH->Jx;
@@ -540,6 +659,12 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 	FL_DBL* new_mat_mask=hH->PML_Byx;
 	FL_DBL* new_vx=hH->Te;
 	FL_DBL* new_vz=hH->mat_mask;
+	//TE:
+	FL_DBL* new_PML_Eyx=hH->Jy;
+	FL_DBL* new_PML_Eyz=hH->PML_Eyx;
+	FL_DBL* new_Bz=hH->PML_Eyz;
+	FL_DBL* new_Bx=hH->Bz;
+	FL_DBL* new_vy=hH->Bx;
 
   // reassign
 
@@ -549,15 +674,23 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 		hH->Ptx=new_Ptx;
 		hH->Pz=new_Pz;
 		hH->Px=new_Px;
+		//TE:
+		hH->Py=new_Py;
+		hH->Pty=new_Pty;
 	}
 	hH->Ez=new_Ez;
 	hH->Ex=new_Ex;
+	//TE:
+	hH->Ey=new_Ey;
 	if(doPhononAbsorbtion)
 	{
 		hH->Phtz=new_Phtz;
 		hH->Phtx=new_Phtx;
 		hH->Phz=new_Phz;
 		hH->Phx=new_Phx;
+		//TE:
+		hH->Phty=new_Phty;
+		hH->Phy=new_Phy;
 	}
 	hH->Jz=new_Jz;
 	hH->Jx=new_Jx;
@@ -569,6 +702,13 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 	hH->mat_mask=new_mat_mask;
 	hH->PML_Byz=new_PML_Byz;
 	hH->PML_Byx=new_PML_Byx;
+	//TE:
+	hH->Jy=new_Jy;
+	hH->PML_Eyx=new_PML_Eyx;
+	hH->PML_Eyz=new_PML_Eyz;
+	hH->Bz=new_Bz;
+	hH->Bx=new_Bx;
+	hH->vy=new_vy;
 
 	hH->iz0 += hH->shft * hH->blockSize;
 }
@@ -576,7 +716,7 @@ inline void shift(hydro2dHandler* hH) // shft is counted in blocks
 
 
 
-
+/*
 inline void roll(hydro2dHandler* hH) // shft is counted in blocks
 {
 	dim3 grid(-floor(-FL_DBL(hH->Nx)/FL_DBL(hH->blockSize)),-floor(-FL_DBL(hH->Nz)/FL_DBL(hH->blockSize)),1);
@@ -638,7 +778,7 @@ inline void roll(hydro2dHandler* hH) // shft is counted in blocks
 
 	hH->iz0 += hH->shft * hH->blockSize;
 }
-
+*/
 
 
 
@@ -648,7 +788,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 	if(hH->t == 0)
 	{
 		std::cout << "Hi this is first step for device " << hH->device << std::endl;
-		std::cout << "grid: Lx=" << hH->Lx << ", Lz=" << hH->Lz << ", Nx=" << hH->Nx << ", Nz=" << hH->Nz << ", dx_1=" << hH->dx_1 << " (dx=" << FPT(1.0)/hH->dx_1 << "), dz_1=" << hH->dz_1 << " (dz=" << FPT(1.0)/hH->dz_1 << "), dt=" << hH->dt << ",\ngeometry: toothWith=" << hH->toothWidth<< ", toothDepth=" << hH->toothDepth << ", mediaDepth=" << hH->mediaDepth << ", flip=" << (hH->flip?"true":"false") << ", toothDirection=" << (hH->toothDir?"true":"false") << ",\nmedia: n0=" << hH->mediaN0 << ", T0=" << hH->mediaTe0 << ", nu=" << hH->mediaNu << ", diffusion=" << hH->diffusion << "," << " mz_1=" << hH->mz_1 << "," << " mx_1=" << hH->mx_1 << ", NUTratio=" << hH->NUTratio << ",";
+		std::cout << "grid: Lx=" << hH->Lx << ", Lz=" << hH->Lz << ", Nx=" << hH->Nx << ", Nz=" << hH->Nz << ", dx_1=" << hH->dx_1 << " (dx=" << FPT(1.0)/hH->dx_1 << "), dz_1=" << hH->dz_1 << " (dz=" << FPT(1.0)/hH->dz_1 << "), dt=" << hH->dt << ",\ngeometry: toothWith=" << hH->toothWidth<< ", toothDepth=" << hH->toothDepth << ", mediaDepth=" << hH->mediaDepth << ", flip=" << (hH->flip?"true":"false") << ", toothDirection=" << (hH->toothDir?"true":"false") << ",\nmedia: n0=" << hH->mediaN0 << ", T0=" << hH->mediaTe0 << ", nu=" << hH->mediaNu << ", diffusion=" << hH->diffusion << "," << " mx_1=" << hH->mx_1 << "," << " my_1=" << hH->my_1 << "," << " mz_1=" << hH->mz_1 << ", NUTratio=" << hH->NUTratio << ",";
 		if (hH->doPolarization)
 		std::cout << "\n       bound_w2=" << hH->media_bound_w2 << " bound_beta=" << hH->media_bound_beta << ", bound_gamma=" << hH->media_bound_gamma << std::endl;
 		if (hH->doPhononAbsorbtion)
@@ -659,7 +799,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 			std::cout << "         therm source is external, srcX=" << hH->srcX;
 		else
 			std::cout << "         source is electromagnetic";
-		std::cout << ", srcAmp=" << hH->srcAmp << ", srcT=" << hH->srcT << ", srcNosc=" << hH->srcNosc << ", switchOnDelay=" << hH->switchOnDelay << ", srcTfactor=" << hH->srcTfactor << std::endl;
+		std::cout << ", srcAmp=" << hH->srcAmp << ", srcT=" << hH->srcT <<  ", srcPhase=" << hH->srcPhase << ", srcNosc=" << hH->srcNosc << ", srcAmpTE=" << hH->srcAmpTE << ", srcTTE=" << hH->srcTTE <<  ", srcPhaseTE=" << hH->srcPhaseTE << ", srcNoscTE=" << hH->srcNoscTE << ", switchOnDelay=" << hH->switchOnDelay << ", srcTfactor=" << hH->srcTfactor << std::endl;
 		std::cout << "         velocity=" << hH->srcVelocity << std::endl;
 		if (hH->JHEAT==1)
 			std::cout << "         electrons heated by current";
@@ -682,17 +822,28 @@ int simpleGPUstep(hydro2dHandler* hH)
 	//printf("grid=%d %d %d\n", grid.x, grid.y, grid.z);
 	dim3 threads(hH->blockSize,hH->blockSize,1);
 
-	hH->tim.start("prepare source");
+	hH->tim.start("prepare TM source");
 	FL_DBL delay = hH->switchOnDelay;
-	FL_DBL srcZ = hH->srcT * hH->srcVelocity;
+	FL_DBL maxSrcT=0;
+	for(int id=0; id < hH->srcT.size(); id++)
+		maxSrcT = hH->srcT[id] > maxSrcT ? hH->srcT[id] : maxSrcT;
+	for(int id=0; id < hH->srcTTE.size(); id++)
+		maxSrcT = hH->srcTTE[id] > maxSrcT ? hH->srcTTE[id] : maxSrcT;
+	FL_DBL srcZ = maxSrcT * hH->srcVelocity;
+	
 	for(int i=0; i != hH->Nz; i++)
 	{
-		double zzd = (double)(i + hH->iz0 - hH->Nz + hH->blockSize + 1) / (double) hH->dz_1 + (double)(srcZ * 0.5) - hH->t * (double) hH->srcVelocity;
-		FL_DBL zz = (FL_DBL(zzd));
-		if(hH->extSource)
-			hH->host_srct[i] = hH->srcAmp * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? pow(FPT(0.5) + FPT(0.5) * cos(zz / srcZ * FPT(2.0) * M_PI), FPT(2.0)) : FPT(0.0));// * FPT(0.5) * (FPT(1.0) + sin(zz / srcZ * hH->srcNosc * M_PI * FPT(4.0)));
-		else
-			hH->host_srct[i] = hH->srcAmp * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? (FPT(0.5) + FPT(0.5) * cos(zz / srcZ * FPT(2.0) * M_PI)) : FPT(0.0)) * sin(zz / srcZ * hH->srcNosc * M_PI * FPT(2.0));
+		hH->host_srct[i] = 0;
+		for(int id=0; id < hH->srcAmp.size(); id++)
+		{
+			FL_DBL srcZlocal = hH->srcT[id] * hH->srcVelocity;
+			double zzd = (double)(i + hH->iz0 - hH->Nz + hH->blockSize + 1) / (double) hH->dz_1 + (double)(srcZ * 0.5) - hH->t * (double) hH->srcVelocity;
+			FL_DBL zz = (FL_DBL(zzd));
+			if(hH->extSource)
+				hH->host_srct[i] += hH->srcAmp[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? pow(FPT(0.5) + FPT(0.5) * cos(zz / srcZ * FPT(2.0) * M_PI), FPT(2.0)) : FPT(0.0));// * FPT(0.5) * (FPT(1.0) + sin(zz / srcZ * hH->srcNosc * M_PI * FPT(4.0)));
+			else
+				hH->host_srct[i] += hH->srcAmp[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? (FPT(0.5) + FPT(0.5) * cos(zz / srcZlocal * FPT(2.0) * M_PI)) : FPT(0.0)) * sin(zz / srcZ * hH->srcNosc[id] * M_PI * FPT(2.0) + hH->srcPhase[id]);
+		}
 	}
 	dev_h2d(hH, hH->host_srct, hH->srct, hH->Nz);
 	hH->tim.stop("prepare source");
@@ -706,24 +857,53 @@ int simpleGPUstep(hydro2dHandler* hH)
 	}
 
 	hH->tim.start("simpleE_Kernel");
-	simpleE_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Ez, hH->Ex, hH->By, hH->Jz, hH->Jx, hH->ix0, hH->iz0, FPT(1.0)/hH->dx_1, hH->dx_1, 1.0/hH->dz_1, hH->dz_1, hH->dt, (hH->extSource ? 0 : hH->srct), hH->SRCi, hH->PMLimin, hH->PMLimax, hH->PMLstrength, hH->PMLxmax, hH->Ez_mid, hH->Ex_mid);
+	simpleE_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Ez, hH->Ex, hH->By, hH->Jz, hH->Jx, hH->ix0, hH->iz0, FPT(1.0)/hH->dx_1, hH->dx_1, 1.0/hH->dz_1, hH->dz_1, hH->dt, hH->extSource ? 0 : hH->srct, hH->SRCi, hH->PMLimin, hH->PMLimax, hH->PMLstrength, hH->PMLxmax, hH->Ez_mid, hH->Ex_mid);
 	cudaThreadSynchronize();
 	hH->tim.stop("simpleE_Kernel");
+	// TE E step
+	hH->tim.start("simpleE_TE_Kernel");
+	simpleE_TE_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Bz, hH->Bx, hH->Ey, hH->Jy, hH->ix0, hH->iz0, FPT(1.)/hH->dx_1, hH->dx_1, FPT(1.)/hH->dz_1, hH->dz_1, hH->dt, hH->PMLimin, hH->PMLimax, hH->PMLstrength, hH->PMLxmax, hH->PML_Eyz, hH->PML_Eyx, hH->Ey_mid);
+	hH->tim.stop("simpleE_TE_Kernel");
+
+
+	hH->tim.start("prepare TE source");
+	for(int i=0; i != hH->Nz; i++)
+	{
+		hH->host_srct[i] = 0;
+		for(int id=0; id < hH->srcAmpTE.size(); id++)
+		{
+			FL_DBL srcZlocal = hH->srcTTE[id] * hH->srcVelocity;
+			double zzd = (double)(i + hH->iz0 - hH->Nz + hH->blockSize + 1) / (double) hH->dz_1 + (double)(srcZ * 0.5) - hH->t * (double) hH->srcVelocity;
+			FL_DBL zz = (FL_DBL(zzd));
+			if(hH->extSource)
+				hH->host_srct[i] += hH->srcAmpTE[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? pow(FPT(0.5) + FPT(0.5) * cos(zz / srcZ * FPT(2.0) * M_PI), FPT(2.0)) : FPT(0.0));// * FPT(0.5) * (FPT(1.0) + sin(zz / srcZ * hH->srcNosc * M_PI * FPT(4.0)));
+			else
+				hH->host_srct[i] += hH->srcAmpTE[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? (FPT(0.5) + FPT(0.5) * cos(zz / srcZlocal * FPT(2.0) * M_PI)) : FPT(0.0)) * sin(zz / srcZ * hH->srcNoscTE[id] * M_PI * FPT(2.0) + hH->srcPhaseTE[id]);
+		}
+	}
+	dev_h2d(hH, hH->host_srct, hH->srct, hH->Nz);
+	hH->tim.stop("prepare TE source");
+
 	
 	hH->tim.start("simpleB_Kernel");
 	simpleB_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Ez, hH->Ex, hH->By, hH->ix0, hH->iz0, 1.0/ hH->dx_1, hH->dx_1, 1.0/ hH->dz_1, hH->dz_1, hH->dt, hH->PMLimin, hH->PMLimax, hH->PMLstrength, hH->PMLxmax, hH->PML_Byz, hH->PML_Byx);
 	cudaThreadSynchronize();
 	hH->tim.stop("simpleB_Kernel");
+	// TE B step
+	hH->tim.start("simpleB_TE_Kernel");
+	simpleB_TE_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Bz, hH->Bx, hH->Ey, hH->ix0, hH->iz0, FPT(1.)/hH->dx_1, hH->dx_1, FPT(1.)/hH->dz_1, hH->dz_1, hH->dt, hH->extSource ? 0 : hH->srct, hH->SRCi, hH->PMLimin, hH->PMLimax, hH->PMLstrength, hH->PMLxmax);
+	cudaThreadSynchronize();
+	hH->tim.stop("simpleB_TE_Kernel");
 	
 	if(!(hH->linear) && IFNONLIN == ON)
 	{
 		hH->tim.start("simpleV_Kernel");
-		simpleV_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->vz, hH->vx, hH->Jz, hH->Jx, hH->n, hH->mediaN0);
+		simpleV_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->vx, hH->vy, hH->vz, hH->Jx, hH->Jy, hH->Jz, hH->n, hH->mediaN0);
 		cudaThreadSynchronize();
 		hH->tim.stop("simpleV_Kernel");
 		
 		hH->tim.start("simpleNl_Kernel");
-		simpleNl_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->nlz, hH->nlx, hH->vz, hH->vx, hH->Jz, hH->Jx, hH->By, hH->dz_1, hH->dx_1, hH->mz_1,  hH->mx_1);
+		simpleNl_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->nlx, hH->nly, hH->nlz, hH->vx, hH->vy, hH->vz, hH->Jx, hH->Jy, hH->Jz, hH->Bx, hH->By, hH->Bz, hH->dz_1, hH->dx_1, hH->mx_1, hH->my_1,  hH->mz_1);
 		cudaThreadSynchronize();
 		hH->tim.stop("simpleNl_Kernel");
 	}
@@ -754,7 +934,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 	}
 
 	hH->tim.start("simpleJ_Kernel");
-	simpleJ_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jz, hH->Jx, hH->Ez, hH->Ex, hH->nlz, hH->nlx, hH->n, hH->Te, /*hH->NUTratio*/ 0.0, hH->mediaTe0, hH->dx_1, hH->dz_1, hH->dt, hH->mediaNu, hH->landauDamping, hH->Phtz, hH->Phtx, hH->Phz, hH->Phx, hH->mz_1,  hH->mx_1, hH->media_phonon_omega, hH->media_phonon_phw, hH->media_phonon_beta, hH->doPhononAbsorbtion, hH->mediaN0, hH->mat_mask, hH->linear);
+	simpleJ_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jx, hH->Jy, hH->Jz, hH->Ex, hH->Ey, hH->Ez, hH->nlx, hH->nly, hH->nlz, hH->n, hH->Te, /*hH->NUTratio*/ 0.0, hH->mediaTe0, hH->dx_1, hH->dz_1, hH->dt, hH->mediaNu, hH->landauDamping, hH->Phtz, hH->Phtx, hH->Phz, hH->Phx, hH->mx_1,  hH->my_1, hH->mz_1, hH->media_phonon_omega, hH->media_phonon_phw, hH->media_phonon_beta, hH->doPhononAbsorbtion, hH->mediaN0, hH->mat_mask, hH->linear);
 	cudaThreadSynchronize();
 	hH->tim.stop("simpleJ_Kernel");
 	
@@ -773,6 +953,10 @@ int simpleGPUstep(hydro2dHandler* hH)
 
 		dev_h2d(hH, feed, hH->feedPML_Byz, hH->Nx * (hH->shft * hH->blockSize));
 		dev_h2d(hH, feed, hH->feedPML_Byx, hH->Nx * (hH->shft * hH->blockSize));
+		//TE
+		dev_h2d(hH, feed, hH->feedPML_Eyz, hH->Nx * (hH->shft * hH->blockSize));
+		dev_h2d(hH, feed, hH->feedPML_Eyx, hH->Nx * (hH->shft * hH->blockSize));
+		
 		if(hH->doPolarization)
 		{
 			dev_h2d(hH, feed, hH->feedPtz, hH->Nx * (hH->shft * hH->blockSize));
@@ -784,6 +968,12 @@ int simpleGPUstep(hydro2dHandler* hH)
 		dev_h2d(hH, feed, hH->feedEx, hH->Nx * (hH->shft * hH->blockSize));
 		dev_h2d(hH, feed, hH->feedBy, hH->Nx * (hH->shft * hH->blockSize));
 
+		//TE
+		dev_h2d(hH, feed, hH->feedBz, hH->Nx * (hH->shft * hH->blockSize));
+		dev_h2d(hH, feed, hH->feedBx, hH->Nx * (hH->shft * hH->blockSize));
+		dev_h2d(hH, feed, hH->feedEy, hH->Nx * (hH->shft * hH->blockSize));
+
+
 		if(hH->doPhononAbsorbtion)
 		{
 			dev_h2d(hH, feed, hH->feedPhtz, hH->Nx * (hH->shft * hH->blockSize));
@@ -792,6 +982,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 			dev_h2d(hH, feed, hH->feedPhx, hH->Nx * (hH->shft * hH->blockSize));
 		}
 		dev_h2d(hH, feed, hH->feedJz, hH->Nx * (hH->shft * hH->blockSize));
+		dev_h2d(hH, feed, hH->feedJy, hH->Nx * (hH->shft * hH->blockSize));
 		dev_h2d(hH, feed, hH->feedJx, hH->Nx * (hH->shft * hH->blockSize));
 		// add grid for n
 		if(hH->a_cell)
@@ -880,40 +1071,53 @@ static void alloc_main_fields(hydro2dHandler* hH)
 	{
 		printf("allocating polarization arrays\n");
 		dev_alloc(hH, (void**)&(hH->Ptz), hH->Nx * hH->Nz);
+		dev_alloc(hH, (void**)&(hH->Pty), hH->Nx * hH->Nz);
 		dev_alloc(hH, (void**)&(hH->Ptx), hH->Nx * hH->Nz);
 		dev_alloc(hH, (void**)&(hH->Pz), hH->Nx * hH->Nz);
+		dev_alloc(hH, (void**)&(hH->Py), hH->Nx * hH->Nz);
 		dev_alloc(hH, (void**)&(hH->Px), hH->Nx * hH->Nz);
 	}
 	
 	dev_alloc(hH, (void**)&(hH->Ez), hH->Nx * hH->Nz);
+	dev_alloc(hH, (void**)&(hH->Ey), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->Ex), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->Ez_mid), hH->Nx * hH->Nz);
+	dev_alloc(hH, (void**)&(hH->Ey_mid), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->Ex_mid), hH->Nx * hH->Nz);
+	dev_alloc(hH, (void**)&(hH->Bz), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->By), hH->Nx * hH->Nz);
+	dev_alloc(hH, (void**)&(hH->Bx), hH->Nx * hH->Nz);
 
 	if(hH->doPhononAbsorbtion)
 	{
 		printf("allocating phonon absorbtion arrays\n");
 		dev_alloc(hH, (void**)&(hH->Phtz), hH->Nx * hH->Nz);
+		dev_alloc(hH, (void**)&(hH->Phty), hH->Nx * hH->Nz);
 		dev_alloc(hH, (void**)&(hH->Phtx), hH->Nx * hH->Nz);
 		dev_alloc(hH, (void**)&(hH->Phz), hH->Nx * hH->Nz);
+		dev_alloc(hH, (void**)&(hH->Phy), hH->Nx * hH->Nz);
 		dev_alloc(hH, (void**)&(hH->Phx), hH->Nx * hH->Nz);
 	}
 
 	dev_alloc(hH, (void**)&(hH->Jx), hH->Nx * hH->Nz);
+	dev_alloc(hH, (void**)&(hH->Jy), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->Jz), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->mat_mask), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->n), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->Te), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->dTe), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->vx), hH->Nx * hH->Nz);
+	dev_alloc(hH, (void**)&(hH->vy), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->vz), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->nlx), hH->Nx * hH->Nz);
+	dev_alloc(hH, (void**)&(hH->nly), hH->Nx * hH->Nz);
 	dev_alloc(hH, (void**)&(hH->nlz), hH->Nx * hH->Nz);
 	
 	//alloc additional fields for PML conditions
 	dev_alloc(hH, (void**)&(hH->PML_Byx), hH->Nz * hH->Nx);
 	dev_alloc(hH, (void**)&(hH->PML_Byz), hH->Nz * hH->Nx);
+	dev_alloc(hH, (void**)&(hH->PML_Eyx), hH->Nz * hH->Nx);
+	dev_alloc(hH, (void**)&(hH->PML_Eyz), hH->Nz * hH->Nx);
 	
 	//alloc feed arrays
 	if(hH->doPolarization)
@@ -929,6 +1133,14 @@ static void alloc_main_fields(hydro2dHandler* hH)
 	dev_alloc(hH, (void**)&(hH->feedBy), hH->Nx * (hH->shft * hH->blockSize));
 	dev_alloc(hH, (void**)&(hH->feedPML_Byz), hH->Nx * (hH->shft * hH->blockSize));
 	dev_alloc(hH, (void**)&(hH->feedPML_Byx), hH->Nx * (hH->shft * hH->blockSize));
+
+	//TE
+	dev_alloc(hH, (void**)&(hH->feedBz), hH->Nx * (hH->shft * hH->blockSize));
+	dev_alloc(hH, (void**)&(hH->feedBx), hH->Nx * (hH->shft * hH->blockSize));
+	dev_alloc(hH, (void**)&(hH->feedEy), hH->Nx * (hH->shft * hH->blockSize));
+	dev_alloc(hH, (void**)&(hH->feedPML_Eyz), hH->Nx * (hH->shft * hH->blockSize));
+	dev_alloc(hH, (void**)&(hH->feedPML_Eyx), hH->Nx * (hH->shft * hH->blockSize));
+
 	
 	if(hH->doPhononAbsorbtion)
 	{
@@ -939,6 +1151,7 @@ static void alloc_main_fields(hydro2dHandler* hH)
 	}
 	
 	dev_alloc(hH, (void**)&(hH->feedJz), hH->Nx * (hH->shft * hH->blockSize));
+	dev_alloc(hH, (void**)&(hH->feedJy), hH->Nx * (hH->shft * hH->blockSize));
 	dev_alloc(hH, (void**)&(hH->feedJx), hH->Nx * (hH->shft * hH->blockSize));
 	dev_alloc(hH, (void**)&(hH->feed_mat_mask), hH->Nx * (hH->shft * hH->blockSize));
 	dev_alloc(hH, (void**)&(hH->feedn), hH->Nx * (hH->shft * hH->blockSize));
@@ -985,7 +1198,10 @@ void simpleGPUinit(hydro2dHandler* hH) // this return handler for operation
 	for(int i=0;i<hH->Nx * hH->Nz;i++) zero[i]=0.0;
 	dev_h2d(hH, zero, hH->PML_Byx, hH->Nz * hH->Nx);
 	dev_h2d(hH, zero, hH->PML_Byz, hH->Nz * hH->Nx);
+	dev_h2d(hH, zero, hH->PML_Eyx, hH->Nz * hH->Nx);
+	dev_h2d(hH, zero, hH->PML_Eyz, hH->Nz * hH->Nx);
 	dev_h2d(hH, zero, hH->Jz, hH->Nx * hH->Nz);
+	dev_h2d(hH, zero, hH->Jy, hH->Nx * hH->Nz);
 	dev_h2d(hH, zero, hH->Jx, hH->Nx * hH->Nz);
 	//we do not care of v and nl arrays.
 	FL_DBL* n0 = new FL_DBL[hH->Nx * hH->Nz];
@@ -1049,13 +1265,20 @@ hydro2dHandler::hydro2dHandler(const hydro2dHandler &obj, int dev) : tim(obj.tim
 																																		 PMLxmax(obj.PMLxmax),
 																																		 PMLstrength(obj.PMLstrength),
 																																		 srcVelocity(obj.srcVelocity),
-																																		 srcT(obj.srcT), srcNosc(obj.srcNosc),
+																																		 srcT(obj.srcT),
+																																		 srcTTE(obj.srcTTE),
+																																		 srcNosc(obj.srcNosc),
+																																		 srcNoscTE(obj.srcNoscTE),
 																																		 srcAmp(obj.srcAmp),
+																																		 srcAmpTE(obj.srcAmpTE),
+																																		 srcPhase(obj.srcPhase),
+																																		 srcPhaseTE(obj.srcPhaseTE),
 																																		 mediaN0(obj.mediaN0),
 																																		 mediaTe0(obj.mediaTe0),
 																																		 diffusion(obj.diffusion),
 																																		 NUTratio(obj.NUTratio),
 																																		 mx_1(obj.mx_1),
+																																		 my_1(obj.my_1),
 																																		 mz_1(obj.mz_1),
 																																		 mediaNu(obj.mediaNu),
 																																		 media_bound_w2(obj.media_bound_w2),
@@ -1096,26 +1319,36 @@ hydro2dHandler::hydro2dHandler(const hydro2dHandler &obj, int dev) : tim(obj.tim
 	if(doPolarization)
 	{
 		COPY_FIELD(Ptx, whole)
+		COPY_FIELD(Pty, whole)
 		COPY_FIELD(Ptz, whole)
 		COPY_FIELD(Px, whole)
+		COPY_FIELD(Py, whole)
 		COPY_FIELD(Pz, whole)
 	}
 	
+	COPY_FIELD(Bx, whole)
 	COPY_FIELD(By, whole)
+	COPY_FIELD(Bz, whole)
 	COPY_FIELD(Ex, whole)
+	COPY_FIELD(Ey, whole)
 	COPY_FIELD(Ez, whole)
 	COPY_FIELD(PML_Byx, whole)
 	COPY_FIELD(PML_Byz, whole)
+	COPY_FIELD(PML_Eyx, whole)
+	COPY_FIELD(PML_Eyz, whole)
 	
 	if(doPhononAbsorbtion)
 	{
 		COPY_FIELD(Phtx, whole)
+		COPY_FIELD(Phty, whole)
 		COPY_FIELD(Phtz, whole)
 		COPY_FIELD(Phx, whole)
+		COPY_FIELD(Phy, whole)
 		COPY_FIELD(Phz, whole)
 	}
 	
 	COPY_FIELD(Jz, whole)
+	COPY_FIELD(Jy, whole)
 	COPY_FIELD(Jx, whole)
 	COPY_FIELD(n, whole)
 	COPY_FIELD(Te, whole)

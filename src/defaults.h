@@ -1,5 +1,5 @@
 #pragma once
-#define USEDOUBLE
+//#define USEDOUBLE
 #ifdef USEDOUBLE
 	#define FL_DBL double
 	#define FPT(x) x
@@ -19,14 +19,15 @@
 #define PMLX FPT(4000.0) // 100.0
 #define PMLSTRENGTH FPT(0.05) // 0.1
 #define SHIFTGRANULARITY 1  // NOTE: shift is counted in blocks
-#define HYDROZSRC OFF
-#define HYDROXSRC OFF
+#define HYDROZSRC ON
+#define HYDROXSRC ON
+#define HYDROYSRC ON
 
-#define MAINSRC	OFF // ON
-#define PRESSURESRC	OFF // ON
-#define HSRC	OFF // ON
+#define MAINSRC	ON // ON
+#define PRESSURESRC	ON // ON
+#define HSRC	ON // ON
 
-#define IFNONLIN  OFF // ON
+#define IFNONLIN  ON // ON
 
 #define BOUND_W2 6.0e-6
 #define BOUND_BETA 0.000423//((omegaOpt/1.7)*(omegaOpt/1.7)*70.0)
@@ -46,6 +47,8 @@
 #define SRCT (FPT(36000.0)) //(FPT(18000.0)*FPT(4.0))
 #define SRCNOSC (FPT(8.0))
 #define SRCAMP FPT(5.0e-6)
+#define SRCAMP_TE FPT(5.0e-6)
+#define SRCPHASE_TE FPT(1.57)
 #define SWITCHONDELAY FPT(30000.0)
 #define SRCX FPT(100.0)
 #define SRCTFACTOR FPT(10000.0) // 300000.0 for j^2; 100.0 for E^2
@@ -71,6 +74,7 @@
 #define MEDIADEPTH FPT(50.0)
 
 #define MX_1 FPT(1.0)
+#define MY_1 FPT(1.0)
 #define MZ_1 FPT(1.0)
 
 #define OUTPUTFILENAME "data.dat"
