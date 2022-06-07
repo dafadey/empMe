@@ -25,11 +25,19 @@ rm -f *.obj appl
 
 echo "compiling..."
 echo "   gpu..."
+echo "simple.cu"
 /usr/local/cuda-9.0/bin/nvcc -w -Xcompiler -fPIC ${enable_double} $INC -O3 -c -arch=$mrch $fm src/simple.cu -o simple.obj
+echo "simple.cu -DSTATIC static means no moving window"
+
+/usr/local/cuda-9.0/bin/nvcc -w -Xcompiler -fPIC -DSTATIC ${enable_double} $INC -O3 -c -arch=$mrch $fm src/simple.cu -o simple_static.obj
+
+echo "service.cu"
 /usr/local/cuda-9.0/bin/nvcc -w -Xcompiler -fPIC ${enable_double} $INC -O3 -c -arch=$mrch $fm src/service.cu -o service.obj
 
 echo "   cpu..."
+echo "   geo.cpp"
 /usr/bin/g++-6 $INC -std=c++11 ${enable_double} -Wall -Werror src/geo.cpp -c -O3 -o geo.obj
+echo "   test.cpp"
 /usr/bin/g++-6 $INC -std=c++11 ${enable_double} -Wall -Werror src/test.cpp -c -O3 -fopenmp -o test.obj
 
 MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -ltclient -lgetGPUtemp" #-lnvidia-ml
@@ -37,5 +45,8 @@ MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -ltclient -lgetGPUtemp" #-ln
 
 echo "linking..."
 /usr/bin/g++-6 $LIB geo.obj test.obj simple.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU
+
+echo "linking static..."
+/usr/bin/g++-6 $LIB geo.obj test.obj simple_static.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU_static
 
 rm -f *.obj

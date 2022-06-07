@@ -105,3 +105,27 @@ void print(string s, real h=14pt)
 	label(s,(0,cr),E);
 	cr-=h;
 }
+
+void printp(string s, real h=14pt, int width=80)
+{
+	for(int i=0;i<length(s);) {
+		string ss;
+		int sz=0;
+		while(true) {
+			string c = substr(s,i,1); 
+			if(!(length(ss)==0 && c==" "))
+				ss += c;
+			
+			if(length(ss) > width && c==" ")
+				break;
+
+			i+=1;
+			if(i==length(s))
+				break;
+				
+		}
+		label(ss,(0,cr),E);
+		cr-=h;
+	}
+}
+

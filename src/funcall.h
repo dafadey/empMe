@@ -72,6 +72,7 @@ struct hydro2dHandler
 	//holds information about 
 	int Nx, Nz; // local
 	FL_DBL Lx, Lz; // local
+	FL_DBL surfaceX;
 	int ix0,iz0; // position in global mesh
 	FL_DBL dx_1,dz_1,dt;
 	FL_DBL* Ptz;
@@ -178,11 +179,15 @@ struct hydro2dHandler
 	FL_DBL media_phonon_beta;
 	//source parameters
 	FL_DBL srcTfactor; // factor for thermal source
+	std::vector<FL_DBL> srcAperture; // used only for static version
+	std::vector<FL_DBL> srcApertureTE; // used only for static version
 	std::vector<FL_DBL> srcAmp;
 	std::vector<FL_DBL> srcAmpTE;
 	std::vector<FL_DBL> srcPhaseTE;
 	std::vector<FL_DBL> srcPhase;
 	FL_DBL srcVelocity;
+	std::vector<FL_DBL> srcTshift;
+	std::vector<FL_DBL> srcTshiftTE;
 	std::vector<FL_DBL> srcT;
 	std::vector<FL_DBL> srcTTE;
 	std::vector<FL_DBL> srcNoscTE;

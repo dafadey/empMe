@@ -127,6 +127,8 @@ int main(int argc, char* argv[])
 	int Nz = NZ;
 	FL_DBL Lx = LX;
 	FL_DBL Lz = LZ;
+	FL_DBL surfaceX = -1.0;
+
 
 	int dev(0);
 	
@@ -158,13 +160,17 @@ int main(int argc, char* argv[])
 	FL_DBL my_1(MY_1);
 	FL_DBL mz_1(MZ_1);
 	
+	std::vector<FL_DBL> srcAperture;
 	std::vector<FL_DBL> srcAmp;
 	std::vector<FL_DBL> srcT;
+	std::vector<FL_DBL> srcTshift;
 	std::vector<FL_DBL> srcNosc;
 	std::vector<FL_DBL> srcPhase;
 	std::vector<FL_DBL> srcAmpTE;
+	std::vector<FL_DBL> srcApertureTE;
 	std::vector<FL_DBL> srcNoscTE;
 	std::vector<FL_DBL> srcTTE;
+	std::vector<FL_DBL> srcTshiftTE;
 	std::vector<FL_DBL> srcPhaseTE;
 
 	FL_DBL switchOnDelay = SWITCHONDELAY;
@@ -199,6 +205,7 @@ int main(int argc, char* argv[])
 			PARSE(PMLx);
 			PARSE(PMLstrength);
 			PARSE(Lx);
+			PARSE(surfaceX);
 			PARSE(Lz);
 			PARSE(Nx);
 			PARSE(Nz);
@@ -206,9 +213,13 @@ int main(int argc, char* argv[])
 			PARSE(srcTfactor);
 			PARSE(srcX);
 			PARSE(srcT);
+			PARSE(srcTshift);
 			PARSE(srcNosc);
 			PARSE(srcNoscTE);
 			PARSE(srcTTE);
+			PARSE(srcTshiftTE);
+			PARSE(srcAperture);
+			PARSE(srcApertureTE);
 			PARSE(srcAmp);
 			PARSE(srcAmpTE);
 			PARSE(srcPhaseTE);
@@ -255,6 +266,8 @@ int main(int argc, char* argv[])
 	}
 	#undef PARSE
 	#undef PARSE2
+	if(surfaceX==-1.0)
+		surfaceX = Lx / 2.0;
 
 	if(srcAmp.size()==0)
 		srcAmp.push_back(SRCAMP);
@@ -263,6 +276,9 @@ int main(int argc, char* argv[])
 
 	#define FILLTO(REF,ARR, VAR)	for(size_t i=ARR.size(); i < REF.size(); i++)	ARR.push_back(VAR);
 	//TM
+	FL_DBL lastAperture = srcAperture.size() ? srcAperture[srcAperture.size() - 1] : Lz * 0.25;
+	FILLTO(srcAmp, srcAperture, lastAperture);
+
 	FL_DBL lastNosc = srcNosc.size() ? srcNosc[srcNosc.size() - 1] : SRCNOSC;
 	FILLTO(srcAmp, srcNosc, lastNosc);
 
@@ -271,7 +287,15 @@ int main(int argc, char* argv[])
 	FL_DBL lastSrcT = srcT.size() ? srcT[srcT.size() - 1] : SRCT;
 	FILLTO(srcAmp, srcT, lastSrcT);
 
+	if(srcTshift.size() != srcT.size()) {
+		for(size_t i=srcTshift.size(); i<srcT.size(); i++)
+			srcTshift.push_back(srcT[i]*.5);
+	}
+
 	//TE
+	FL_DBL lastApertureTE = srcApertureTE.size() ? srcApertureTE[srcApertureTE.size() - 1] : Lz * 0.25;
+	FILLTO(srcAmp, srcApertureTE, lastApertureTE);
+	
 	lastNosc = srcNoscTE.size() ? srcNoscTE[srcNoscTE.size() - 1] : SRCNOSC;
 	FILLTO(srcAmpTE, srcNoscTE, lastNosc);
 
@@ -279,6 +303,11 @@ int main(int argc, char* argv[])
 
 	lastSrcT = srcTTE.size() ? srcTTE[srcTTE.size() - 1] : SRCT;
 	FILLTO(srcAmpTE, srcTTE, lastSrcT);
+
+	if(srcTshiftTE.size() != srcT.size()) {
+		for(size_t i=srcTshiftTE.size(); i<srcTTE.size(); i++)
+			srcTshiftTE.push_back(srcTTE[i]*.5);
+	}
 
 	#undef FILLTO
 
@@ -308,7 +337,7 @@ int main(int argc, char* argv[])
   #else
   description << "accuracy: float\n"; 
   #endif
-	description << "grid: Lx=" << Lx << ", Lz=" << Lz << ", Nx=" << Nx << ", Nz=" << Nz << ", dx_1=" << dx_1 << " (dx=" << FPT(1.0)/dx_1 << "), dz_1=" << dz_1 << " (dz=" << FPT(1.0)/dz_1 << "), dt=" << dt << ", PMLx=" << PMLx << ", PMLstrength=" << PMLstrength << std::endl;
+	description << "grid: Lx=" << Lx << ", Lz=" << Lz << ", Nx=" << Nx << ", Nz=" << Nz << ", dx_1=" << dx_1 << " (dx=" << FPT(1.0)/dx_1 << "), dz_1=" << dz_1 << " (dz=" << FPT(1.0)/dz_1 << "), dt=" << dt << ", PMLx=" << PMLx << ", PMLstrength=" << PMLstrength << ", surfaceX=" << surfaceX << std::endl;
 	description << "run: Tmax=" << tMAX << ", Tavg=" << Tavg << ", output=" << outputFilename << ", silentIterations(iterations before draw/save)=" << iter << ",\ngeometry: toothWith=" << toothWidth<< ", toothDepth=" << toothDepth << ", mediaDepth=" << mediaDepth;
 	if(c_ptr)
 		description << ", cellFilename=" << cellFilename << ", scalex=" << cell_scalex << ", scaley=" << cell_scaley;
@@ -322,7 +351,22 @@ int main(int argc, char* argv[])
 		description << "         therm source is external, srcX=" << srcX;
 	else
 		description << "         source is electromagnetic (use extSource=1 to switch to thermal source)";
-  description << ", srcAmp=" << srcAmp << ", srcT=" << srcT <<  ", srcPhase=" << srcPhase << ", srcNosc=" << srcNosc << ", srcAmpTE=" << srcAmpTE << ", srcTTE=" << srcTTE <<  ", srcPhaseTE=" << srcPhaseTE << ", srcNoscTE=" << srcNoscTE << ", switchOnDelay=" << switchOnDelay << ", srcTfactor=" << srcTfactor << std::endl;
+	#ifdef STATIC
+	description << ", srcAperture=" << srcAperture;
+	#endif
+  description << ", srcAmp=" << srcAmp << ", srcT=" << srcT;
+	#ifdef STATIC
+	description << ", srcTshift=" << srcTshift;
+	#endif
+  description <<  ", srcPhase=" << srcPhase << ", srcNosc=" << srcNosc;
+	#ifdef STATIC
+	description << ", srcApertureTE=" << srcApertureTE;
+	#endif
+	description << ", srcAmpTE=" << srcAmpTE << ", srcTTE=" << srcTTE;
+	#ifdef STATIC
+	description << ", srcTshiftTE=" << srcTshiftTE;
+	#endif
+	description <<  ", srcPhaseTE=" << srcPhaseTE << ", srcNoscTE=" << srcNoscTE << ", switchOnDelay=" << switchOnDelay << ", srcTfactor=" << srcTfactor << std::endl;
 	description << "         velocity=" << velocity << std::endl;
 	if (jHeat==1)
 	  description << "         electrons heated by current";
@@ -387,6 +431,7 @@ int main(int argc, char* argv[])
 	hH->Nx = Nx;
 	hH->Nz = Nz;
 	hH->Lx = Lx;
+	hH->surfaceX = surfaceX;
 	hH->Lz = Lz;
 	hH->ix0 = 0;
 	hH->iz0 = 0;
@@ -398,11 +443,15 @@ int main(int argc, char* argv[])
 	hH->srcVelocity = velocity;
 	hH->srcTfactor = srcTfactor;
 	hH->srcT = srcT;
+	hH->srcTshift = srcTshift;
 	hH->srcTTE = srcTTE;
+	hH->srcTshiftTE = srcTshiftTE;
 	hH->srcNosc = srcNosc;
 	hH->srcNoscTE = srcNoscTE;
 	hH->srcAmp = srcAmp;
+	hH->srcAperture = srcAperture;
 	hH->srcAmpTE = srcAmpTE;
+	hH->srcApertureTE = srcApertureTE;
 	hH->srcPhase = srcPhase;
 	hH->srcPhaseTE = srcPhaseTE;
 	hH->mediaN0 = mediaN0;
@@ -495,6 +544,10 @@ int main(int argc, char* argv[])
 	//calculate and save generation
 	FL_DBL extraction_factor = nonlinVSlin ? FPT(1.0) : FPT(2.0);
   map_timer tim;
+  std::vector<float> Te_profile(hH->Nz, 0);
+  
+  std::ofstream Te_profile_of("Te_profile.dat");
+  
 	while(hH->t < tMAX)
 	{
 
@@ -558,9 +611,10 @@ int main(int argc, char* argv[])
       {
         for(int j=0; j!=hH->Nx; j++)
         {
-          maxTe = std::max(maxTe, TeGPU[i]);
+          maxTe = std::max(maxTe, TeGPU[j+i*hH->Nx]);
           if(TeGPU[j+i*hH->Nx] > FPT(1.e-5))
           {
+						Te_profile[i] = TeGPU[j+i*hH->Nx];
             surf_norm_T += FPT(1.0);
             surf_Te_avg += TeGPU[j+i*hH->Nx];
             surf_nuf_avg += FPT(1.0) + hH->NUTratio * SQRTNUT(TeGPU[j+i*hH->Nx]);
@@ -592,6 +646,11 @@ int main(int argc, char* argv[])
       FL_DBL nuf = FPT(1.0) + hH->NUTratio * SQRTNUT(maxTe);
 			std::cout << "\niter #=" << hH->step << ", t=" << hH->t << " (target=" << tMAX << "), bnorm=" << bnorm << ", bweaknorm=" << bweaknorm << ", bdiffnorm=" << bdiffnorm << ",\nmaxT=" << maxTe << ", Te0=" << hH->mediaTe0 << ", nu_factor=" << nuf << ", nu=" << hH->mediaNu * nuf << ",\nt_s_avg=" << surf_Te_avg << ", nuf_s_avg=" << surf_nuf_avg << ", nu_s_avg=" << surf_nuf_avg * hH->mediaNu << ", maxJ=" << maxJ << ", surf_J=" << surf_J_avg << "\n" << std::flush;
       
+			Te_profile_of << hH->Nz << '\n';
+			Te_profile_of << hH->Lz << '\n';
+			for(int i=0;i<hH->Nz;i++)
+				Te_profile_of << Te_profile[i] << '\n';
+      
 			if(DRAW)
 			{
 
@@ -604,7 +663,7 @@ int main(int argc, char* argv[])
 
 				fadey_draw(generationBy, Nx, Nz, 8);
 				fadey_draw(generationEy, Nx, Nz, 6);
-				fadey_draw(neGPU, Nx, Nz, 7);
+				fadey_draw(TeGPU, Nx, Nz, 7);
 				
       }
 			for(int i(0); i != Nx * Nz; i++) {
@@ -645,6 +704,9 @@ int main(int argc, char* argv[])
 		}
 
 	}
+	
+	Te_profile_of.close();
+	
 	// ok we reached target time.
 	// now we want to average generated magnetic field over some period Tavg
 	// the trick here is to average taking into accout movig of the whole field picture with velocity V and shifting (iz0 changes during shifting)

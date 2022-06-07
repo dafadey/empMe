@@ -53,7 +53,6 @@
 #define SRCX FPT(100.0)
 #define SRCTFACTOR FPT(10000.0) // 300000.0 for j^2; 100.0 for E^2
 
-
 /*
 #define LX FPT(40000.0) //FPT(500.0)
 #define LZ FPT(168000.0) //FPT(20000.0*8.0) FPT(20000.0*4.0)
@@ -80,4 +79,4 @@
 #define OUTPUTFILENAME "data.dat"
 #define ITER 1000
 
-#define SQRTNUT //sqrt
+#define SQRTNUT(X) abs(X)

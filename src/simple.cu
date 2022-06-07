@@ -6,6 +6,7 @@
 #include "geo.h"
 #include "helpers.h"
 #include <cmath>
+#include <mutex>
 
 //-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION
 //-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION-----DEVICE-SECTION
@@ -19,7 +20,7 @@
 
 extern "C"
 hydro2dHandler::hydro2dHandler(int dev, bool _doPhononAbsorbtion, bool _doPolarization, bool _extSource, int _JHEAT) :
-								tim(), device(dev), Nx(NX), Nz(NZ), Lx(LX), Lz(LZ), ix0(0), iz0(0), dx_1(0), dz_1(0), dt(0),
+								tim(), device(dev), Nx(NX), Nz(NZ), Lx(LX), surfaceX(LX/2.0), Lz(LZ), ix0(0), iz0(0), dx_1(0), dz_1(0), dt(0),
 								Ptz(nullptr), Pty(nullptr), Ptx(nullptr), Pz(nullptr), Py(nullptr), Px(nullptr), Ez(nullptr), Ey(nullptr), Ex(nullptr), Bz(nullptr), By(nullptr), Bx(nullptr), Phtz(nullptr), Phty(nullptr), Phtx(nullptr), Phz(nullptr), Phy(nullptr), Phx(nullptr), Jz(nullptr), Jy(nullptr), Jx(nullptr), mat_mask(nullptr), n(nullptr), Te(nullptr), dTe(nullptr), nlx(nullptr), nly(nullptr), nlz(nullptr), vx(nullptr), vy(nullptr), vz(nullptr), PML_Byx(nullptr), PML_Byz(nullptr), PML_Eyx(nullptr), PML_Eyz(nullptr), feedPtz(nullptr), feedPtx(nullptr), feedPz(nullptr), feedPx(nullptr), feedEz(nullptr), feedEx(nullptr), feedBy(nullptr), feedPML_Byx(nullptr), feedPML_Byz(nullptr), feedPhtz(nullptr), feedPhtx(nullptr), feedPhz(nullptr), feedPhx(nullptr), feedJz(nullptr), feedJx(nullptr), feed_mat_mask(nullptr), feedn(nullptr), feedTe(nullptr), srcx(nullptr), srct(nullptr), host_feed(nullptr), host_srct(nullptr),
 								t(0), step(0), PMLimin(0), PMLimax(0), SRCi(0), shft(SHIFTGRANULARITY), blockSize(BS), PMLxmax(PMLX), PMLstrength(PMLSTRENGTH),
 								mediaN0(N0), mediaTe0(TE0),diffusion(DIFFUSION), mediaNu(MEDIANU), NUTratio(NUTRATIO), landauDamping(LANDAUDAMPING), mx_1(MX_1), my_1(MY_1), mz_1(MZ_1), toothDepth(TOOTHDEPTH), toothWidth(TOOTHWIDTH), mediaDepth(MEDIADEPTH), a_cell(nullptr), media_bound_w2(BOUND_W2), media_bound_gamma(BOUND_GAMMA), media_bound_beta(BOUND_BETA), media_phonon_omega(PHONON_OMEGA), media_phonon_phw(PHONON_PHW), media_phonon_beta(PHONON_BETA), srcTfactor(SRCTFACTOR), srcVelocity(VELOCITY), srcX(SRCX), switchOnDelay(SWITCHONDELAY),
@@ -68,29 +69,18 @@ simpleE_Kernel(int Nx, int Nz, FL_DBL* Ez, FL_DBL* Ex, FL_DBL* By, FL_DBL* Jz, F
 	if(i >= 0 && i < Nz && j >= 0 && j < Nx)
 	{
 		FL_DBL E_prev = Ez[i*Nx+j];
-		Ez[i*Nx+j] = Ez[i*Nx+j] * (( j+ix0<PMLimin || j+ix0>PMLimax ) ? PML(FL_DBL((j+ix0<PMLimin)?j+ix0:Nx-1-j)*dx, pmlx, pml):FPT(1.0)) + (-(((j+1==Nx)?Ez[i*Nx+j]:By[i*Nx+j+1])-By[i*Nx+j]) * dx_1 - Jz[i*Nx+j] + /*source*/(srct && j + ix0 == srci ? srct[i] * dx_1 : FPT(0.0)))*dt;
+		FL_DBL pml_z_factor = ( j+ix0<PMLimin || j+ix0>PMLimax ) ? PML(FL_DBL((j+ix0<PMLimin)?j+ix0:Nx-1-j)*dx, pmlx, pml):FPT(1.0);
+		#ifdef STATIC
+		FL_DBL pml_x_factor = ( i+iz0<PMLimin || i+iz0>PMLimax ) ? PML(FL_DBL((i+iz0<PMLimin)?i+iz0:Nz-1-i)*dz, pmlx, pml):FPT(1.0);
+		#else
+		FL_DBL pml_x_factor = FL_DBL(1.);
+		#endif
+		Ez[i*Nx+j] = Ez[i*Nx+j] * pml_z_factor + (-(((j+1==Nx)?Ez[i*Nx+j]:By[i*Nx+j+1])-By[i*Nx+j]) * dx_1 - Jz[i*Nx+j] + /*source*/(srct && j + ix0 == srci ? srct[i] * dx_1 : FPT(0.0)))*dt;
     Ez_mid[i*Nx+j] = (Ez[i*Nx+j] + E_prev) * (FL_DBL) 0.5;
-// no bottom pml:
-//			Ez[i*Nx+j]=Ez[i*Nx+j]*(( j+ix0<PMLimin ) ? PML(FL_DBL((j+ix0<PMLimin)?j+ix0:Nx-1-j)*dx, pmlx, pml):FPT(1.0))+(-(((j+1==Nx)?Ez[i*Nx+j]:By[i*Nx+j+1])-By[i*Nx+j]) * dx_1 - Jz[i*Nx+j] + /*source*/(srct && j + ix0 == srci ? srct[i] : FPT(0.0)))*dt;
 
 		E_prev = Ex[i*Nx+j];
-    Ex[i*Nx+j] += ((((i+1==Nz)?FPT(0.0):By[(i+1)*Nx+j]) - By[i*Nx+j]) * dz_1 - Jx[i*Nx+j]) * dt;
+    Ex[i*Nx+j] = Ex[i*Nx+j] * pml_x_factor + ((((i+1==Nz)?-Ex[i*Nx+j]:By[(i+1)*Nx+j]) - By[i*Nx+j]) * dz_1 - Jx[i*Nx+j]) * dt;
     Ex_mid[i*Nx+j] = (Ex[i*Nx+j] + E_prev) * FPT(0.5);
-    
-  }
-}
-
-//TE TE TE  Bx Bz
-__global__ void
-simpleB_TE_Kernel(int Nx, int Nz, FL_DBL* Bz, FL_DBL* Bx, FL_DBL* Ey, int ix0, int iz0, FL_DBL dx, FL_DBL dx_1, FL_DBL dz, FL_DBL dz_1, FL_DBL dt, FL_DBL* srct, int srci, int PMLimin, int PMLimax, FL_DBL pml, FL_DBL pmlx)
-{
-	const int j=threadIdx.x+blockIdx.x*blockDim.x;
-	const int i=threadIdx.y+blockIdx.y*blockDim.y;
-	if(i >= 0 && i < Nz && j >= 0 && j < Nx)
-	{
-		Bz[i*Nx+j] = Bz[i*Nx+j] * (( j+ix0<PMLimin || j+ix0>PMLimax ) ? PML(FL_DBL((j+ix0<PMLimin)?j+ix0:Nx-1-j)*dx, pmlx, pml):FPT(1.0)) + ((Ey[i*Nx+j] - (j==0 ? Bz[i*Nx+j] : Ey[i*Nx+j-1])) * dx_1 + /*source*/(srct && j + ix0 == srci ? srct[i] * dx_1 : FPT(0.0))) * dt;
-
-    Bx[i*Nx+j] += ((i==0 ? FPT(0.0) : Ey[(i-1)*Nx+j]) - Ey[i*Nx+j]) * dz_1 * dt;
     
   }
 }
@@ -102,25 +92,62 @@ simpleB_Kernel(int Nx, int Nz, FL_DBL* Ez, FL_DBL* Ex, FL_DBL* By, int ix0, int 
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
 	if(i >= 0 && i < Nz && j >= 0 && j < Nx)
 	{
-//				By[i*Nx+j]+=(-(Ez[i*Nx+j]-((j==0)?FPT(0.0):Ez[i*Nx+j-1]))*dx_1+(Ex[i*Nx+j]-((i==0)?FPT(0.0):Ex[(i-1)*Nx+j]))*dz_1)*dt;
+//	without PML
+//	By[i*Nx+j]+=(-(Ez[i*Nx+j]-((j==0)?FPT(0.0):Ez[i*Nx+j-1]))*dx_1+(Ex[i*Nx+j]-(i == 0 ? By[i * Nx + j] : Ex[(i-1)*Nx+j]))*dz_1)*dt;
 
-		if(j+ix0<PMLimin)
+		#ifdef STATIC
+		bool PML_area = j+ix0<PMLimin || j+ix0>PMLimax || i < PMLimin || i > Nz - PMLimin;
+		#else
+		bool PML_area = j+ix0<PMLimin || j+ix0>PMLimax;
+		#endif
+		
+		if(PML_area)
 		{
-			PML_Byz[i*Nx+j]=PML_Byz[i*Nx+j]+(Ex[i*Nx+j]-((i==0)?FPT(0.0):Ex[(i-1)*Nx+j]))*dz_1*dt;
-			PML_Byx[i*Nx+j]=PML_Byx[i*Nx+j]*PML(FL_DBL(j+ix0)*dx, pmlx, pml)-(Ez[i*Nx+j]-((j+ix0==0)?-By[i*Nx+j]:Ez[i*Nx+j-1]))*dx_1*dt;
+			#ifdef STATIC
+			if(i < PMLimin)
+				PML_Byz[i*Nx+j]=PML_Byz[i*Nx+j]*PML(FL_DBL(i)*dx, pmlx, pml);
+			else if(i > Nz - PMLimin)
+				PML_Byz[i*Nx+j]=PML_Byz[i*Nx+j]*PML(FL_DBL(Nz-1-i)*dx, pmlx, pml);
+			#endif
+
+			if(j+ix0<PMLimin)
+				PML_Byx[i*Nx+j] = PML_Byx[i*Nx+j]*PML(FL_DBL(j+ix0)*dx, pmlx, pml);
+			else if(j+ix0>Nx-PMLimin)
+				PML_Byx[i*Nx+j] = PML_Byx[i*Nx+j]*PML(FL_DBL(Nx-1-j)*dx, pmlx, pml);
+			
+			
+			PML_Byx[i*Nx+j]+=-(Ez[i*Nx+j]-(j + ix0 == 0 ? -PML_Byx[i*Nx+j] : Ez[i*Nx+j-1]))*dx_1*dt;
+			PML_Byz[i*Nx+j]+=(Ex[i*Nx+j]-(i == 0 ? PML_Byz[i * Nx + j] : Ex[(i-1)*Nx+j]))*dz_1*dt;
+			
 			By[i*Nx+j]=PML_Byz[i*Nx+j]+PML_Byx[i*Nx+j];
-		}
-		else if(j+ix0>PMLimax)
-		{
-			PML_Byz[i*Nx+j]=PML_Byz[i*Nx+j]+(Ex[i*Nx+j]-((i==0)?FPT(0.0):Ex[(i-1)*Nx+j]))*dz_1*dt;
-			PML_Byx[i*Nx+j]=PML_Byx[i*Nx+j]*PML(FL_DBL(Nx-1-j)*dx, pmlx, pml)-(Ez[i*Nx+j]-Ez[i*Nx+j-1])*dx_1*dt;
-			By[i*Nx+j]=PML_Byz[i*Nx+j]+PML_Byx[i*Nx+j];
+
 		}
 		else
-			By[i*Nx+j]+=(-(Ez[i*Nx+j]-Ez[i*Nx+j-1])*dx_1+(Ex[i*Nx+j]-(i==0 ? FPT(0.0) : Ex[(i-1)*Nx+j]))*dz_1)*dt;
+			By[i*Nx+j] += (-(Ez[i*Nx+j]-(j + ix0 == 0 ? -By[i*Nx+j] : Ez[i*Nx+j-1]))*dx_1+(Ex[i*Nx+j]-(i == 0 ? By[i * Nx + j] : Ex[(i-1)*Nx+j]))*dz_1)*dt;
 	}
 }
 
+//TE TE TE  Bx Bz
+__global__ void
+simpleB_TE_Kernel(int Nx, int Nz, FL_DBL* Bz, FL_DBL* Bx, FL_DBL* Ey, int ix0, int iz0, FL_DBL dx, FL_DBL dx_1, FL_DBL dz, FL_DBL dz_1, FL_DBL dt, FL_DBL* srct, int srci, int PMLimin, int PMLimax, FL_DBL pml, FL_DBL pmlx)
+{
+	const int j=threadIdx.x+blockIdx.x*blockDim.x;
+	const int i=threadIdx.y+blockIdx.y*blockDim.y;
+	if(i >= 0 && i < Nz && j >= 0 && j < Nx)
+	{
+		FL_DBL pml_z_factor = ( j+ix0<PMLimin || j+ix0>Nx - PMLimin ) ? PML(FL_DBL((j+ix0<PMLimin)?j+ix0:Nx-1-j)*dx, pmlx, pml):FPT(1.0);
+		Bz[i*Nx+j] = Bz[i*Nx+j] * pml_z_factor + ((Ey[i*Nx+j] - (j==0 ? Bz[i*Nx+j] : Ey[i*Nx+j-1])) * dx_1 + /*source*/(srct && j + ix0 == srci ? srct[i] * dx_1 : FPT(0.0))) * dt;
+
+		#ifdef STATIC
+		FL_DBL pml_x_factor = ( i+iz0<PMLimin || i+iz0>PMLimax ) ? PML(FL_DBL((i+iz0<PMLimin)?i+iz0:Nz-1-i)*dz, pmlx, pml):FPT(1.0);
+		#else
+		FL_DBL pml_x_factor = FPT(1.);
+		#endif
+
+    Bx[i*Nx+j] = Bx[i*Nx+j] * pml_x_factor + ((i == 0 ? -Bx[i*Nx+j] : Ey[(i-1)*Nx+j]) - Ey[i*Nx+j]) * dz_1 * dt;
+    
+  }
+}
 
 //TE TE TE  Ey
 __global__ void
@@ -132,20 +159,39 @@ simpleE_TE_Kernel(int Nx, int Nz, FL_DBL* Bz, FL_DBL* Bx, FL_DBL* Ey, FL_DBL* Jy
 	{
 		FL_DBL E_prev = Ey[i*Nx+j];
 		FL_DBL E_next = E_prev;
-		if(j+ix0<PMLimin)
+
+		#ifdef STATIC
+		bool PML_area = j+ix0<PMLimin || j+ix0>Nx-PMLimin || i < PMLimin || i > Nz - PMLimin;
+		#else
+		bool PML_area = j+ix0<PMLimin || j+ix0>Nx-PMLimin;
+		#endif
+		
+		PML_area = false;
+		
+		if(PML_area)
 		{
-			PML_Eyz[i*Nx+j]=PML_Eyz[i*Nx+j]+(Bx[i*Nx+j]-(i+1==Nz ? FPT(0.0) : Bx[(i+1)*Nx+j]))*dz_1*dt;
-			PML_Eyx[i*Nx+j]=PML_Eyx[i*Nx+j]*PML(FL_DBL(j+ix0)*dx, pmlx, pml)+(Bz[i*Nx+j+1] - Bz[i*Nx+j])*dx_1*dt;
-			E_next=PML_Eyz[i*Nx+j]+PML_Eyx[i*Nx+j] - Jy[i*Nx+j]*dt;
-		}
-		else if(j+ix0>PMLimax)
-		{
-			PML_Eyz[i*Nx+j]=PML_Eyz[i*Nx+j]+(Bx[i*Nx+j]-(i+1==Nz ? FPT(0.0) : Bx[(i+1)*Nx+j]))*dz_1*dt;
-			PML_Eyx[i*Nx+j]=PML_Eyx[i*Nx+j]*PML(FL_DBL(Nx-1-j)*dx, pmlx, pml)+((j+ix0+1==Nz ? FPT(0.0) : Bz[i*Nx+j+1])-Bz[i*Nx+j])*dx_1*dt;
+			#ifdef STATIC
+			if(i < PMLimin)
+				PML_Eyz[i*Nx+j]=PML_Eyz[i*Nx+j]*PML(FL_DBL(i)*dx, pmlx, pml);
+			else if(i > Nz - PMLimin)
+				PML_Eyz[i*Nx+j]=PML_Eyz[i*Nx+j]*PML(FL_DBL(Nz-1-i)*dx, pmlx, pml);
+			#endif
+
+			if(j+ix0<PMLimin)
+				PML_Eyx[i*Nx+j] = PML_Eyx[i*Nx+j]*PML(FL_DBL(j+ix0)*dx, pmlx, pml);
+			else if(j+ix0>Nx-PMLimin)
+				PML_Eyx[i*Nx+j] = PML_Eyx[i*Nx+j]*PML(FL_DBL(Nx-1-j)*dx, pmlx, pml);
+
+
+			PML_Eyz[i*Nx+j] += (Bx[i*Nx+j]-(i+1==Nz ? PML_Eyz[i*Nx+j] : Bx[(i+1)*Nx+j]))*dz_1*dt;
+			PML_Eyx[i*Nx+j] += ((j+ix0+1==Nx ? -PML_Eyx[i*Nx+j] : Bz[i*Nx+j+1])-Bz[i*Nx+j])*dx_1*dt;
+
+			
 			E_next=PML_Eyz[i*Nx+j]+PML_Eyx[i*Nx+j] - Jy[i*Nx+j]*dt;
 		}
 		else
-			E_next+=((Bz[i*Nx+j+1]-Bz[i*Nx+j])*dx_1-((i+1==Nz ? FPT(0.0) : Bx[(i+1)*Nx+j])-Bx[i*Nx+j])*dz_1 - Jy[i*Nx+j])*dt;
+			E_next += (((j+ix0+1==Nx ? -Ey[i*Nx+j] : Bz[i*Nx+j+1])-Bz[i*Nx+j])*dx_1-((i+1==Nz ? Ey[i*Nx+j] : Bx[(i+1)*Nx+j])-Bx[i*Nx+j])*dz_1 - Jy[i*Nx+j])*dt;
+		
 		Ey_mid[i*Nx+j] = FL_DBL(.5)*(E_next+E_prev);
 		Ey[i*Nx+j] = E_next;
 	}
@@ -159,10 +205,11 @@ simpleV_Kernel(int Nx, int Nz, FL_DBL* vx, FL_DBL* vy, FL_DBL* vz, FL_DBL* Jx, F
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
 	if(i >= 0 && i < Nz && j >= 0 && j < Nx)
 	{
-    if(Jz[i*Nx+j] == FPT(0.0) && Jx[i*Nx+j] == FPT(0.0))
+    if(Jz[i*Nx+j] == FPT(0.0) && Jx[i*Nx+j] == FPT(0.0) && Jy[i*Nx+j] == FPT(0.0))
     {
       vz[i*Nx+j] = FPT(0.0);
       vx[i*Nx+j] = FPT(0.0);
+      vy[i*Nx+j] = FPT(0.0);
       return;
     }
     
@@ -204,7 +251,7 @@ simpleNl_Kernel(int Nx, int Nz, FL_DBL* nlx, FL_DBL* nly, FL_DBL* nlz, FL_DBL* v
 		nly[i*Nx+j]=
 					HYDROYSRC*(FPT(0.5)*(Jz[i*Nx+j]+Jz[ip1*Nx+j])*(vy[ip1*Nx+j]-vy[im1*Nx+j])*FPT(0.5)*dz_1+FPT(0.5)*(Jx[i*Nx+j]+Jx[i*Nx+jp1])*(vy[i*Nx+jp1]-vy[i*Nx+jm1])*FPT(0.5)*dx_1)
 					+MAINSRC*vy[i*Nx+j]*((Jx[i*Nx+jp1]-Jx[i*Nx+j])*dx_1+(Jz[ip1*Nx+j]-Jz[i*Nx+j])*dz_1)
-					+((Jz[i*Nx+j]+Jz[ip1*Nx+j])*(Bx[ip1*Nx+j]+Bx[i*Nx+j]) + (Jx[i*Nx+j]+Jz[i*Nx+jp1])*(Bz[i*Nx+jp1]+Bz[i*Nx+j]))*FPT(0.25)*my_1*HSRC;
+					+((Jz[i*Nx+j]+Jz[ip1*Nx+j])*(Bx[ip1*Nx+j]+Bx[i*Nx+j]) + (Jx[i*Nx+j]+Jx[i*Nx+jp1])*(Bz[i*Nx+jp1]+Bz[i*Nx+j]))*FPT(0.25)*my_1*HSRC;
 	}
 }
 
@@ -785,10 +832,12 @@ inline void roll(hydro2dHandler* hH) // shft is counted in blocks
 extern "C"
 int simpleGPUstep(hydro2dHandler* hH)
 {
+	static std::mutex coutMutex;
 	if(hH->t == 0)
 	{
+		coutMutex.lock();
 		std::cout << "Hi this is first step for device " << hH->device << std::endl;
-		std::cout << "grid: Lx=" << hH->Lx << ", Lz=" << hH->Lz << ", Nx=" << hH->Nx << ", Nz=" << hH->Nz << ", dx_1=" << hH->dx_1 << " (dx=" << FPT(1.0)/hH->dx_1 << "), dz_1=" << hH->dz_1 << " (dz=" << FPT(1.0)/hH->dz_1 << "), dt=" << hH->dt << ",\ngeometry: toothWith=" << hH->toothWidth<< ", toothDepth=" << hH->toothDepth << ", mediaDepth=" << hH->mediaDepth << ", flip=" << (hH->flip?"true":"false") << ", toothDirection=" << (hH->toothDir?"true":"false") << ",\nmedia: n0=" << hH->mediaN0 << ", T0=" << hH->mediaTe0 << ", nu=" << hH->mediaNu << ", diffusion=" << hH->diffusion << "," << " mx_1=" << hH->mx_1 << "," << " my_1=" << hH->my_1 << "," << " mz_1=" << hH->mz_1 << ", NUTratio=" << hH->NUTratio << ",";
+		std::cout << "grid: Lx=" << hH->Lx << ", Lz=" << hH->Lz << ", Nx=" << hH->Nx << ", Nz=" << hH->Nz << ", dx_1=" << hH->dx_1 << " (dx=" << FPT(1.0)/hH->dx_1 << "), dz_1=" << hH->dz_1 << " (dz=" << FPT(1.0)/hH->dz_1 << "), dt=" << hH->dt << ",\ngeometry: surfaceX=" << hH->surfaceX << ", toothWith=" << hH->toothWidth<< ", toothDepth=" << hH->toothDepth << ", mediaDepth=" << hH->mediaDepth << ", flip=" << (hH->flip?"true":"false") << ", toothDirection=" << (hH->toothDir?"true":"false") << ",\nmedia: n0=" << hH->mediaN0 << ", T0=" << hH->mediaTe0 << ", nu=" << hH->mediaNu << ", diffusion=" << hH->diffusion << "," << " mx_1=" << hH->mx_1 << "," << " my_1=" << hH->my_1 << "," << " mz_1=" << hH->mz_1 << ", NUTratio=" << hH->NUTratio << ",";
 		if (hH->doPolarization)
 		std::cout << "\n       bound_w2=" << hH->media_bound_w2 << " bound_beta=" << hH->media_bound_beta << ", bound_gamma=" << hH->media_bound_gamma << std::endl;
 		if (hH->doPhononAbsorbtion)
@@ -799,7 +848,22 @@ int simpleGPUstep(hydro2dHandler* hH)
 			std::cout << "         therm source is external, srcX=" << hH->srcX;
 		else
 			std::cout << "         source is electromagnetic";
-		std::cout << ", srcAmp=" << hH->srcAmp << ", srcT=" << hH->srcT <<  ", srcPhase=" << hH->srcPhase << ", srcNosc=" << hH->srcNosc << ", srcAmpTE=" << hH->srcAmpTE << ", srcTTE=" << hH->srcTTE <<  ", srcPhaseTE=" << hH->srcPhaseTE << ", srcNoscTE=" << hH->srcNoscTE << ", switchOnDelay=" << hH->switchOnDelay << ", srcTfactor=" << hH->srcTfactor << std::endl;
+		#ifdef STATIC
+		std::cout << ", srcAperture=" << hH->srcAperture;
+		#endif
+		std::cout << ", srcAmp=" << hH->srcAmp << ", srcT=" << hH->srcT;
+		#ifdef STATIC
+		std::cout << ", srcTshift=" << hH->srcTshift;
+		#endif
+		std::cout <<  ", srcPhase=" << hH->srcPhase << ", srcNosc=" << hH->srcNosc;
+		#ifdef STATIC
+		std::cout << ", srcApertureTE=" << hH->srcApertureTE;
+		#endif
+		std::cout << ", srcAmpTE=" << hH->srcAmpTE << ", srcTTE=" << hH->srcTTE;
+		#ifdef STATIC
+		std::cout << ", srcTshiftTE=" << hH->srcTshiftTE;
+		#endif
+		std::cout <<  ", srcPhaseTE=" << hH->srcPhaseTE << ", srcNoscTE=" << hH->srcNoscTE << ", switchOnDelay=" << hH->switchOnDelay << ", srcTfactor=" << hH->srcTfactor << std::endl;
 		std::cout << "         velocity=" << hH->srcVelocity << std::endl;
 		if (hH->JHEAT==1)
 			std::cout << "         electrons heated by current";
@@ -807,7 +871,9 @@ int simpleGPUstep(hydro2dHandler* hH)
 			std::cout << "         electrons heated classicaly by (j, E)";
 		else if (hH->JHEAT==0)
 			std::cout << "         electrons heated by electric field";
-    std::cout << std::endl; 
+    std::cout << std::endl << std::flush; 
+
+		coutMutex.unlock();
 
     if(cudaSetDevice(hH->device))
     {
@@ -816,8 +882,6 @@ int simpleGPUstep(hydro2dHandler* hH)
     }
   }
 	
-
-
 	dim3 grid(-floor(-FL_DBL(hH->Nx)/FL_DBL(hH->blockSize)),-floor(-FL_DBL(hH->Nz)/FL_DBL(hH->blockSize)),1);
 	//printf("grid=%d %d %d\n", grid.x, grid.y, grid.z);
 	dim3 threads(hH->blockSize,hH->blockSize,1);
@@ -836,13 +900,24 @@ int simpleGPUstep(hydro2dHandler* hH)
 		hH->host_srct[i] = 0;
 		for(int id=0; id < hH->srcAmp.size(); id++)
 		{
+			FL_DBL delay_factor = hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : FPT(1.0);
+			#ifndef STATIC
 			FL_DBL srcZlocal = hH->srcT[id] * hH->srcVelocity;
+			//zzd is calculated by substraction of big numbers that is why everything is converted to double to make sure we are not loosing precision
 			double zzd = (double)(i + hH->iz0 - hH->Nz + hH->blockSize + 1) / (double) hH->dz_1 + (double)(srcZ * 0.5) - hH->t * (double) hH->srcVelocity;
 			FL_DBL zz = (FL_DBL(zzd));
+			FL_DBL envelope = (FPT(2.) * std::abs(zz) < std::abs(srcZ)) ? (FPT(0.5) + FPT(0.5) * cos(zz / srcZlocal * FPT(2.0) * M_PI)) : FPT(.0);
 			if(hH->extSource)
-				hH->host_srct[i] += hH->srcAmp[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? pow(FPT(0.5) + FPT(0.5) * cos(zz / srcZ * FPT(2.0) * M_PI), FPT(2.0)) : FPT(0.0));// * FPT(0.5) * (FPT(1.0) + sin(zz / srcZ * hH->srcNosc * M_PI * FPT(4.0)));
+				hH->host_srct[i] += hH->srcAmp[id] * delay_factor * pow(envelope, FPT(2.0));// * FPT(0.5) * (FPT(1.0) + sin(zz / srcZ * hH->srcNosc * M_PI * FPT(4.0)));
 			else
-				hH->host_srct[i] += hH->srcAmp[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? (FPT(0.5) + FPT(0.5) * cos(zz / srcZlocal * FPT(2.0) * M_PI)) : FPT(0.0)) * sin(zz / srcZ * hH->srcNosc[id] * M_PI * FPT(2.0) + hH->srcPhase[id]);
+				hH->host_srct[i] += hH->srcAmp[id] * delay_factor * envelope * sin(zz / srcZ * hH->srcNosc[id] * M_PI * FPT(2.0) + hH->srcPhase[id]);
+			#else // STATIC
+			FL_DBL localT = hH->t - hH->srcTshift[id];
+			FL_DBL envelopeT = FPT(2.) * std::abs(localT) < std::abs(hH->srcT[id]) ? (FPT(.5) + FPT(.5) * cos(FPT(2.) * localT / hH->srcT[id] * M_PI)) : FPT(.0); 
+			FL_DBL localZ = (FL_DBL) i / hH->dz_1 - hH->Lz * 0.5;
+			FL_DBL envelopeAperture = exp(-pow(localZ/hH->srcAperture[id]*2.0, 8));//FPT(2.) * std::abs(localZ) < hH->srcAperture[id] ? FPT(.5) + FPT(.5) * cos(localZ / hH->srcAperture[id] * M_PI * FPT(2.)) : FPT(.0);
+			hH->host_srct[i] += hH->srcAmp[id] * delay * envelopeT * envelopeAperture * sin((hH->t - hH->srcTshift[id]) / hH->srcT[id] * M_PI * FPT(2.0) * hH->srcNosc[id] + hH->srcPhase[id]);
+			#endif
 		}
 	}
 	dev_h2d(hH, hH->host_srct, hH->srct, hH->Nz);
@@ -872,13 +947,24 @@ int simpleGPUstep(hydro2dHandler* hH)
 		hH->host_srct[i] = 0;
 		for(int id=0; id < hH->srcAmpTE.size(); id++)
 		{
+			FL_DBL delay_factor = hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : FPT(1.0);
+			#ifndef STATIC
 			FL_DBL srcZlocal = hH->srcTTE[id] * hH->srcVelocity;
+			//zzd is calculated by substraction of big numbers that is why everything is converted to double to make sure we are not loosing precision
 			double zzd = (double)(i + hH->iz0 - hH->Nz + hH->blockSize + 1) / (double) hH->dz_1 + (double)(srcZ * 0.5) - hH->t * (double) hH->srcVelocity;
 			FL_DBL zz = (FL_DBL(zzd));
+			FL_DBL envelope = (FPT(2.) * std::abs(zz) < std::abs(srcZ)) ? (FPT(0.5) + FPT(0.5) * cos(zz / srcZlocal * FPT(2.0) * M_PI)) : FPT(.0);
 			if(hH->extSource)
-				hH->host_srct[i] += hH->srcAmpTE[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? pow(FPT(0.5) + FPT(0.5) * cos(zz / srcZ * FPT(2.0) * M_PI), FPT(2.0)) : FPT(0.0));// * FPT(0.5) * (FPT(1.0) + sin(zz / srcZ * hH->srcNosc * M_PI * FPT(4.0)));
+				hH->host_srct[i] += hH->srcAmpTE[id] * delay_factor * envelope;// * FPT(0.5) * (FPT(1.0) + sin(zz / srcZ * hH->srcNosc * M_PI * FPT(4.0)));
 			else
-				hH->host_srct[i] += hH->srcAmpTE[id] * (hH->t < delay ? FPT(0.5) - FPT(0.5) * cos(M_PI * hH->t / delay) : 1.0) * ((fabs(zz / srcZ * FPT(2.0)) < FPT(1.0)) ? (FPT(0.5) + FPT(0.5) * cos(zz / srcZlocal * FPT(2.0) * M_PI)) : FPT(0.0)) * sin(zz / srcZ * hH->srcNoscTE[id] * M_PI * FPT(2.0) + hH->srcPhaseTE[id]);
+				hH->host_srct[i] += hH->srcAmpTE[id] * delay_factor * envelope * sin(zz / srcZ * hH->srcNoscTE[id] * M_PI * FPT(2.0) + hH->srcPhaseTE[id]);
+			#else // STATIC
+			FL_DBL localT = hH->t - hH->srcTshiftTE[id];
+			FL_DBL envelopeT = FPT(2.) * std::abs(localT) < std::abs(hH->srcTTE[id]) ? (FPT(.5) + FPT(.5) * cos(FPT(2.) * localT / hH->srcTTE[id] * M_PI)) : FPT(.0); 
+			FL_DBL localZ = (FL_DBL) i / hH->dz_1 - hH->Lz * 0.5;
+			FL_DBL envelopeAperture = exp(-pow(localZ/hH->srcApertureTE[id]*2.0, 8));//FPT(2.) * std::abs(localZ) < hH->srcApertureTE[id] ? FPT(.5) + FPT(.5) * cos(localZ / hH->srcApertureTE[id] * M_PI * FPT(2.)) : FPT(.0);
+			hH->host_srct[i] += hH->srcAmpTE[id] * delay * envelopeT * envelopeAperture * sin((hH->t - hH->srcTshiftTE[id]) / hH->srcTTE[id] * M_PI * FPT(2.0) * hH->srcNoscTE[id] + hH->srcPhaseTE[id]);
+			#endif
 		}
 	}
 	dev_h2d(hH, hH->host_srct, hH->srct, hH->Nz);
@@ -934,7 +1020,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 	}
 
 	hH->tim.start("simpleJ_Kernel");
-	simpleJ_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jx, hH->Jy, hH->Jz, hH->Ex, hH->Ey, hH->Ez, hH->nlx, hH->nly, hH->nlz, hH->n, hH->Te, /*hH->NUTratio*/ 0.0, hH->mediaTe0, hH->dx_1, hH->dz_1, hH->dt, hH->mediaNu, hH->landauDamping, hH->Phtz, hH->Phtx, hH->Phz, hH->Phx, hH->mx_1,  hH->my_1, hH->mz_1, hH->media_phonon_omega, hH->media_phonon_phw, hH->media_phonon_beta, hH->doPhononAbsorbtion, hH->mediaN0, hH->mat_mask, hH->linear);
+	simpleJ_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jx, hH->Jy, hH->Jz, hH->Ex, hH->Ey, hH->Ez, hH->nlx, hH->nly, hH->nlz, hH->n, hH->Te, hH->NUTratio, hH->mediaTe0, hH->dx_1, hH->dz_1, hH->dt, hH->mediaNu, hH->landauDamping, hH->Phtz, hH->Phtx, hH->Phz, hH->Phx, hH->mx_1,  hH->my_1, hH->mz_1, hH->media_phonon_omega, hH->media_phonon_phw, hH->media_phonon_beta, hH->doPhononAbsorbtion, hH->mediaN0, hH->mat_mask, hH->linear);
 	cudaThreadSynchronize();
 	hH->tim.stop("simpleJ_Kernel");
 	
@@ -943,7 +1029,8 @@ int simpleGPUstep(hydro2dHandler* hH)
 
 //  roll(hH);
 
-	if(hH->t * (double) hH->srcVelocity - (double) hH->iz0 / (double) hH->dz_1 > (double) hH->blockSize / (double) hH->dz_1)
+	#ifndef STATIC
+	if(hH->srcVelocity > 0 && hH->t * (double) hH->srcVelocity - (double) hH->iz0 / (double) hH->dz_1 > (double) hH->blockSize / (double) hH->dz_1)
 	{
 		hH->tim.start("feed");
 		//manage feed
@@ -1007,7 +1094,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 					z_cell_local += (double) cell_id * c->get_lz();
 					for(int j=0;j<hH->Nx;j++)
 					{
-						double x = (double) j * (double) dx + (double) dx * 0.5 - (double) hH->Lx * 0.5;
+						double x = (double) j * (double) dx + (double) dx * 0.5 - (double) hH->surfaceX;
 						//std::cout << "calling inside(" << z_cell_local << ", " << x << ")" << std::endl;
 						bool res = c->inside(z_cell_local, x);
 						ins += res ? 1 : 0;
@@ -1026,7 +1113,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 			{
 				int ireal=hH->iz0+i;
 				FL_DBL z = FL_DBL(ireal) / hH->dz_1;
-				FL_DBL levelL = hH->Lx/2.0;// - hH->Lx/4.0;
+				FL_DBL levelL = hH->surfaceX;
 				FL_DBL levelH = levelL + hH->mediaDepth;
 
 				int toothWidthi = hH->toothWidth * hH->dz_1;
@@ -1058,6 +1145,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 		shift(hH);
 		hH->tim.stop("feed");
 	}
+	#endif // STATIC
   return 0;
 }
 
@@ -1163,6 +1251,7 @@ static void alloc_main_fields(hydro2dHandler* hH)
 	//allocate some host arrays for external source
 	hH->host_feed = new FL_DBL[hH->Nx * (hH->shft * hH->blockSize)];
 	hH->host_srct = new FL_DBL[hH->Nz];	
+		
 	printf("\tdone\n");
 }
 
@@ -1189,7 +1278,7 @@ void simpleGPUinit(hydro2dHandler* hH) // this return handler for operation
 	hH->PMLimin = -floor(- hH->PMLxmax * hH->dx_1);
 	hH->PMLimin = ((hH->PMLimin / hH->blockSize)+(((hH->PMLimin % hH->blockSize)==0)?0:1)) * hH->blockSize;
 	hH->PMLimax = hH->Nx-hH->PMLimin;
-	hH->SRCi = hH->Nx/2-hH->Nx/16;
+	hH->SRCi = floor(hH->surfaceX * hH->dx_1) - hH->Nx/16;
 //	hH->SRCi = hH->PMLimin+1; // usefull for visualization
 	alloc_main_fields(hH);
 
@@ -1213,7 +1302,7 @@ void simpleGPUinit(hydro2dHandler* hH) // this return handler for operation
 	for(int j = 0; j != hH->Nx; j++)
 	{
 		FL_DBL x = FL_DBL(j) / hH->dx_1;
-		srcx[j] = exp(-pow((x - (hH->Lx/2.0 - hH->Lx/4.0*0.0))/hH->srcX,2.0));
+		srcx[j] = exp(-pow((x - hH->surfaceX) / hH->srcX, 2.0));
 	}
 	dev_h2d(hH, srcx, hH->srcx, hH->Nx);
 	
@@ -1222,8 +1311,8 @@ void simpleGPUinit(hydro2dHandler* hH) // this return handler for operation
 		int ireal=hH->iz0+i;
 		FL_DBL z=FL_DBL(ireal) / hH->dz_1;
 		//FL_DBL levelL=hH->Lx/3.0;
-		FL_DBL levelL=hH->Lx/2.0;
-		FL_DBL levelH=hH->Lx/2.0;
+		FL_DBL levelL=hH->surfaceX;
+		FL_DBL levelH=hH->surfaceX;
 		int leveli=(z/(hH->Lz/13.0)-floor(z/(hH->Lz/13.0))>0.5)?int(floor(levelH*hH->dx_1)):int(floor(levelL*hH->dx_1));
 		for(int j = 0; j != hH->Nx; j++)
 		{
@@ -1232,11 +1321,80 @@ void simpleGPUinit(hydro2dHandler* hH) // this return handler for operation
 			T0[i * hH->Nx + j] = FPT(0.0);//(n0[i * hH->Nx + j] != FPT(0.0)) ? hH->mediaTe0 : FPT(0.0);
 		}
 	}
+//0.01 * sin(double(i)/double(hH->Nz)*hH->Lz*0.001);
+
+	#ifdef STATIC
+	std::vector<FL_DBL> buff(hH->Nx * hH->Nz, FPT(.0));
+	if(hH->a_cell)
+	{
+		//std::cout << "feeding from cell, step is " << hH->step << std::endl;
+		int ins(0);
+		int outs(0);
+		const cell* c = hH->a_cell;
+		const int imin = std::floor(c->get_zmin() / c->get_lz()); 
+		const int imax = std::ceil(c->get_zmax() / c->get_lz()); 
+		const double dz = FL_DBL(1.0) / hH->dz_1;
+		const double dx = FL_DBL(1.0) / hH->dx_1;
+		for(int i = hH->PMLimin+3; i<hH->Nz-hH->PMLimin-3; i++)
+		{
+			double z = (double) i * (double) dz;
+			double z_cell_local = std::fmod(z, c->get_lz());
+			for(int j=0;j<hH->Nx;j++)
+			{
+				double x = (double) j * (double) dx + (double) dx * 0.5 - (double) hH->surfaceX;
+				//std::cout << "calling inside(" << z_cell_local << ", " << x << ")" << std::endl;
+				bool res = c->inside(z_cell_local, x);
+				ins += res ? 1 : 0;
+				outs += res ? 0 : 1;
+				//std::cout << (res ? "got yes" : "got no") << std::endl;
+				mat_mask[i * hH->Nx + j] = res ? FPT(1.0) : mat_mask[i * hH->Nx + j];
+				//feed[i * hH->Nx + j] = res ? hH->mediaN0 : feed[i * hH->Nx + j];
+			}
+		}
+		//std::cout << "done, ins = " << ins << ", outs = " << outs << std::endl;
+	}
+	else
+	{
+		for(int i = hH->PMLimin+3; i<hH->Nz-hH->PMLimin-3; i++)
+		{
+			FL_DBL z = FL_DBL(i) / hH->dz_1;
+			FL_DBL levelL = hH->surfaceX;
+			FL_DBL levelH = levelL + hH->mediaDepth;
+
+			int toothWidthi = hH->toothWidth * hH->dz_1;
+			int toothDepthi = hH->toothDepth * hH->dx_1;
+			int profile = FL_DBL(((hH->toothDir) ? i : 100000000 - i) % toothWidthi) / FL_DBL(toothWidthi) * FL_DBL(toothDepthi);
+			if(hH->flip)
+			{
+				for(int j=0;j<hH->Nx;j++)
+					mat_mask[i * hH->Nx + j]=((j < levelH * hH->dx_1 + profile) && (j > levelL * hH->dx_1)) ? FPT(1.0) : FPT(0.0);
+			}
+			else
+			{
+				for(int j=0;j<hH->Nx;j++)
+					mat_mask[i * hH->Nx + j]=((j < levelH * hH->dx_1 + toothDepthi) && (j > levelL * hH->dx_1 + profile)) ? FPT(1.0) : FPT(0.0);
+			}
+		}
+	}
+	
+	double TdistortionAmp = 0.0001;//0.0003;
+	for(int i = 0; i != hH->Nz; i++)
+	{
+		double z = double(i-hH->Nz/2)/double(hH->Nz)*hH->Lz;
+		double value = (double)rand()/(double)RAND_MAX;
+		for(int j = 0; j != hH->Nx; j++)
+		{
+      if(mat_mask[i * hH->Nx + j])
+				T0[i * hH->Nx + j] = TdistortionAmp * value * exp(-abs((double(j)/hH->dx_1-hH->surfaceX)/300.));//0.0003 * exp(-pow(z/53000.,4)) * pow(cos(z/hH->toothWidth*M_PI),2);
+		}
+	}
+	#endif
 
 	dev_h2d(hH, mat_mask, hH->mat_mask, hH->Nx * hH->Nz);
 	dev_h2d(hH, n0, hH->n, hH->Nx * hH->Nz);
 	dev_h2d(hH, T0, hH->Te, hH->Nx * hH->Nz);
 	printf("simpleGPUinit: blockSize=%d, x0=%d, z0=%d, dx_1=%g, dz_1=%g, dt=%g, PMLxmax=%g, PMLimin=%d\n", hH->blockSize, hH->ix0, hH->iz0, hH->dx_1, hH->dz_1, hH->dt, hH->PMLxmax, hH->PMLimin);
+
 	delete[] zero;
 	delete[] n0;
 	delete[] T0;
@@ -1251,6 +1409,7 @@ hydro2dHandler::hydro2dHandler(const hydro2dHandler &obj, int dev) : tim(obj.tim
 																																		 Nx(obj.Nx),
 																																		 Nz(obj.Nz),
 																																		 Lx(obj.Lx),
+																																		 surfaceX(obj.surfaceX),
 																																		 Lz(obj.Lz),
 																																		 ix0(obj.ix0),
 																																		 iz0(obj.iz0),
@@ -1267,8 +1426,12 @@ hydro2dHandler::hydro2dHandler(const hydro2dHandler &obj, int dev) : tim(obj.tim
 																																		 srcVelocity(obj.srcVelocity),
 																																		 srcT(obj.srcT),
 																																		 srcTTE(obj.srcTTE),
+																																		 srcTshift(obj.srcTshift),
+																																		 srcTshiftTE(obj.srcTshiftTE),
 																																		 srcNosc(obj.srcNosc),
 																																		 srcNoscTE(obj.srcNoscTE),
+																																		 srcAperture(obj.srcAperture),
+																																		 srcApertureTE(obj.srcApertureTE),
 																																		 srcAmp(obj.srcAmp),
 																																		 srcAmpTE(obj.srcAmpTE),
 																																		 srcPhase(obj.srcPhase),
