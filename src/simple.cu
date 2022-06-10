@@ -166,8 +166,6 @@ simpleE_TE_Kernel(int Nx, int Nz, FL_DBL* Bz, FL_DBL* Bx, FL_DBL* Ey, FL_DBL* Jy
 		bool PML_area = j+ix0<PMLimin || j+ix0>Nx-PMLimin;
 		#endif
 		
-		PML_area = false;
-		
 		if(PML_area)
 		{
 			#ifdef STATIC
