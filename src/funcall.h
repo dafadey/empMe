@@ -178,6 +178,9 @@ struct hydro2dHandler
 	FL_DBL media_phonon_phw;
 	FL_DBL media_phonon_beta;
 	//source parameters
+	FL_DBL Bxext;
+	FL_DBL Byext;
+	FL_DBL Bzext;
 	FL_DBL srcTfactor; // factor for thermal source
 	std::vector<FL_DBL> srcAperture; // used only for static version
 	std::vector<FL_DBL> srcApertureTE; // used only for static version
@@ -202,6 +205,11 @@ struct hydro2dHandler
 	bool flip; // if flip then tooths are below surface
 
 	bool linear;
+	
+	void* pywrapper;
+
+	double (*TEsource_callback)(double /*t*/, double /*z*/, void* /*PyObject if needed*/) = nullptr;
+	double (*TMsource_callback)(double /*t*/, double /*z*/, void* /*PyObject if needed*/) = nullptr;
 
 	hydro2dHandler(int /*dev*/, bool = false /*doPhononAbsorbtion*/, bool = false /*doPolarization*/, bool = false/*extSource*/, int = 0 /*JHEAT*/);
 	hydro2dHandler(const hydro2dHandler& obj, int dev = -1);

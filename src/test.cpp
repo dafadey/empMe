@@ -172,6 +172,9 @@ int main(int argc, char* argv[])
 	std::vector<FL_DBL> srcTTE;
 	std::vector<FL_DBL> srcTshiftTE;
 	std::vector<FL_DBL> srcPhaseTE;
+	FL_DBL Bxext = 0;
+	FL_DBL Byext = 0;
+	FL_DBL Bzext = 0;
 
 	FL_DBL switchOnDelay = SWITCHONDELAY;
 	FL_DBL srcX(SRCX);
@@ -210,6 +213,9 @@ int main(int argc, char* argv[])
 			PARSE(Nx);
 			PARSE(Nz);
 			PARSE(switchOnDelay);
+			PARSE(Bxext);
+			PARSE(Byext);
+			PARSE(Bzext);
 			PARSE(srcTfactor);
 			PARSE(srcX);
 			PARSE(srcT);
@@ -351,7 +357,8 @@ int main(int argc, char* argv[])
 		description << "         therm source is external, srcX=" << srcX;
 	else
 		description << "         source is electromagnetic (use extSource=1 to switch to thermal source)";
-	#ifdef STATIC
+	description << ", Bxext=" << Bxext << ", Byext=" << Byext << ", Bzext=" << Bzext << std::endl;
+ 	#ifdef STATIC
 	description << ", srcAperture=" << srcAperture;
 	#endif
   description << ", srcAmp=" << srcAmp << ", srcT=" << srcT;
@@ -441,6 +448,9 @@ int main(int argc, char* argv[])
 	hH->PMLxmax = PMLx;
 	hH->PMLstrength = PMLstrength;
 	hH->srcVelocity = velocity;
+	hH->Bxext = Bxext;
+	hH->Byext = Byext;
+	hH->Bzext = Bzext;
 	hH->srcTfactor = srcTfactor;
 	hH->srcT = srcT;
 	hH->srcTshift = srcTshift;

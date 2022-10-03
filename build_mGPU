@@ -20,6 +20,7 @@ INC="-I/usr/local/cuda-9.0/include -I/usr/local/cuda-9.0/samples/common/inc -I${
 cuLIB="/usr/local/cuda-9.0/lib64"
 LIB="-L${cuLIB} -L${MYTOOLS}/lib" #-L${MYTOOLS}/nvml/lib64"
 fm= #--use_fast_math #coment it if you whant divisions and transcend funcs to be IEEE or something similar to IEEE
+gccOPTS="-fPIC -std=c++11 -O3"
 echo "cleaning..."
 rm -f *.obj appl
 
@@ -36,17 +37,27 @@ echo "service.cu"
 
 echo "   cpu..."
 echo "   geo.cpp"
-/usr/bin/g++-6 $INC -std=c++11 ${enable_double} -Wall -Werror src/geo.cpp -c -O3 -o geo.obj
+/usr/bin/g++-6 -g $INC ${gccOPTS} ${enable_double} -Wall -Werror src/geo.cpp -c -o geo.obj
 echo "   test.cpp"
-/usr/bin/g++-6 $INC -std=c++11 ${enable_double} -Wall -Werror src/test.cpp -c -O3 -fopenmp -o test.obj
+/usr/bin/g++-6 -g $INC ${gccOPTS} ${enable_double} -Wall -Werror src/test.cpp -c -fopenmp -o test.obj
 
 MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -ltclient -lgetGPUtemp" #-lnvidia-ml
 #MYLIBS="-lsimpledraw_glfw3 -lzstream -lsvg1 -lmesh1 -lgetGPUtemp" #-lgetGPUtemp #-lnvidia-ml
 
 echo "linking..."
-/usr/bin/g++-6 $LIB geo.obj test.obj simple.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU
+/usr/bin/g++-6 -fPIC $LIB geo.obj test.obj simple.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU
 
 echo "linking static..."
-/usr/bin/g++-6 $LIB geo.obj test.obj simple_static.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU_static
+/usr/bin/g++-6 -g -fPIC $LIB geo.obj test.obj simple_static.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU_static
+
+echo "compiling python wrappers"
+/usr/bin/g++-6 ${INC} ${gccOPTS} -g src/pyAPI.cpp -c -o pyAPI.o -DPYMODNAME=pyEmpMe -I/usr/include/python3.9
+
+/usr/bin/g++-6 ${INC} ${gccOPTS} src/pyAPI.cpp -c -o pyAPI_static.o -DSTATIC -DPYMODNAME=pyEmpMe_static -I/usr/include/python3.9
+
+echo "linking python library"
+/usr/bin/g++-6 $LIB -fPIC pyAPI_static.o geo.obj simple_static.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o pyEmpMe_static.so -shared
+
+/usr/bin/g++-6 $LIB -fPIC pyAPI.o geo.obj simple.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o pyEmpMe.so -shared
 
 rm -f *.obj
