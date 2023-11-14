@@ -19,11 +19,11 @@
 #define BS 16 // do not use any const variables this can break loops unroll in GPU code
 
 extern "C"
-hydro2dHandler::hydro2dHandler(int dev, bool _doPhononAbsorbtion, bool _doPolarization, bool _extSource, int _JHEAT) :
+hydro2dHandler::hydro2dHandler(int dev, bool _doPhononAbsorbtion, bool _doPolarization, bool _extSource, eHEATTYPE _JHEAT) :
 								tim(), device(dev), Nx(NX), Nz(NZ), Lx(LX), surfaceX(LX/2.0), Lz(LZ), ix0(0), iz0(0), dx_1(0), dz_1(0), dt(0),
 								Ptz(nullptr), Pty(nullptr), Ptx(nullptr), Pz(nullptr), Py(nullptr), Px(nullptr), Ez(nullptr), Ey(nullptr), Ex(nullptr), Bz(nullptr), By(nullptr), Bx(nullptr), Phtz(nullptr), Phty(nullptr), Phtx(nullptr), Phz(nullptr), Phy(nullptr), Phx(nullptr), Jz(nullptr), Jy(nullptr), Jx(nullptr), mat_mask(nullptr), n(nullptr), Te(nullptr), dTe(nullptr), nlx(nullptr), nly(nullptr), nlz(nullptr), vx(nullptr), vy(nullptr), vz(nullptr), PML_Byx(nullptr), PML_Byz(nullptr), PML_Eyx(nullptr), PML_Eyz(nullptr), feedPtz(nullptr), feedPtx(nullptr), feedPz(nullptr), feedPx(nullptr), feedEz(nullptr), feedEx(nullptr), feedBy(nullptr), feedPML_Byx(nullptr), feedPML_Byz(nullptr), feedPhtz(nullptr), feedPhtx(nullptr), feedPhz(nullptr), feedPhx(nullptr), feedJz(nullptr), feedJx(nullptr), feed_mat_mask(nullptr), feedn(nullptr), feedTe(nullptr), srcx(nullptr), srct(nullptr), host_feed(nullptr), host_srct(nullptr),
 								t(0), step(0), PMLimin(0), PMLimax(0), SRCi(0), shft(SHIFTGRANULARITY), blockSize(BS), PMLxmax(PMLX), PMLstrength(PMLSTRENGTH),
-								mediaN0(N0), mediaTe0(TE0),diffusion(DIFFUSION), mediaNu(MEDIANU), NUTratio(NUTRATIO), landauDamping(LANDAUDAMPING), mx_1(MX_1), my_1(MY_1), mz_1(MZ_1), toothDepth(TOOTHDEPTH), toothWidth(TOOTHWIDTH), mediaDepth(MEDIADEPTH), a_cell(nullptr), media_bound_w2(BOUND_W2), media_bound_gamma(BOUND_GAMMA), media_bound_beta(BOUND_BETA), media_phonon_omega(PHONON_OMEGA), media_phonon_phw(PHONON_PHW), media_phonon_beta(PHONON_BETA), Byext(.0), srcTfactor(SRCTFACTOR), srcVelocity(VELOCITY), srcX(SRCX), switchOnDelay(SWITCHONDELAY),
+								mediaN0(N0), mediaTe0(TE0),diffusion(DIFFUSION), mediaNu(MEDIANU), NUTratio(NUTRATIO), landauDamping(LANDAUDAMPING), Vdiffusion(VDIFFUSION), mx_1(MX_1), my_1(MY_1), mz_1(MZ_1), toothDepth(TOOTHDEPTH), toothWidth(TOOTHWIDTH), mediaDepth(MEDIADEPTH), a_cell(nullptr), media_bound_w2(BOUND_W2), media_bound_gamma(BOUND_GAMMA), media_bound_beta(BOUND_BETA), media_phonon_omega(PHONON_OMEGA), media_phonon_phw(PHONON_PHW), media_phonon_beta(PHONON_BETA), Byext(.0), srcTfactor(SRCTFACTOR), srcVelocity(VELOCITY), srcX(SRCX), switchOnDelay(SWITCHONDELAY),
 								doPolarization(_doPolarization),  doPhononAbsorbtion(_doPhononAbsorbtion), extSource(_extSource), JHEAT(_JHEAT),
 								toothDir(false), flip(false), linear(false) {}
 
@@ -278,7 +278,7 @@ __device__ inline FL_DBL sqr(FL_DBL x)
 {return x*x;}
 
 __global__ void
-simple_dTe_Kernel(int Nx, int Nz, FL_DBL D, FL_DBL NuTratio, FL_DBL mediaTe0, FL_DBL* dTe, FL_DBL* Te, FL_DBL* n, FL_DBL* Ex, FL_DBL* Ez, FL_DBL* jx, FL_DBL* jz, FL_DBL dz_1, FL_DBL dx_1, FL_DBL* srct, FL_DBL* srcx, FL_DBL SRCFACTOR, FL_DBL* mat_mask)
+simple_dTe_Kernel(int Nx, int Nz, FL_DBL D, FL_DBL NuTratio, FL_DBL mediaTe0, FL_DBL* dTe, FL_DBL* Te, FL_DBL* n, FL_DBL* Ex, FL_DBL* Ez, FL_DBL* jx, FL_DBL* jz, FL_DBL dz_1, FL_DBL dx_1, FL_DBL* srct, FL_DBL* srcx, FL_DBL SRCFACTOR, FL_DBL FACTOR_DEPENDS_ON_T, FL_DBL* mat_mask)
 {
 	const int j=threadIdx.x+blockIdx.x*blockDim.x;
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
@@ -306,14 +306,14 @@ simple_dTe_Kernel(int Nx, int Nz, FL_DBL D, FL_DBL NuTratio, FL_DBL mediaTe0, FL
 			int im1 = (i==0 || mat_mask[(i-1)*Nx+j] == FPT(0.0)) ? i : i - 1; //von neumann bc
 			int jm1 = (j==0 || mat_mask[i*Nx+(j-1)] == FPT(0.0)) ? j : j - 1; //von neumann bc
       
-      //const FL_DBL ratio = (FPT(1.0) + NuTrartio * SQRTNUT(Te[i*Nx+j] - mediaTe0));
-      //const FL_DBL ratio = (FPT(1.0) + NuTratio * SQRTNUT(Te[i*Nx+j])) / (FPT(1.0) + FPT(5.0) * SQRTNUT(Te[i*Nx+j] / mediaTe0));
       const FL_DBL ratio = FPT(1.0) + NuTratio * SQRTNUT(Te[i*Nx+j]);
       const FL_DBL d = D / ratio;
 			
+			const FL_DBL srcTfactor = SRCFACTOR * (FACTOR_DEPENDS_ON_T * ratio + (FPT(1.) - FACTOR_DEPENDS_ON_T));
+			
 			//#define SRCFACTOR FPT(100.0)
 
-			dTe[i*Nx+j] = SRCFACTOR * ratio * src + d * ((Te[i*Nx+jp1]+Te[i*Nx+jm1]-FPT(2.0)*Te[i*Nx+j])*dx_1*dx_1+(Te[ip1*Nx+j]+Te[im1*Nx+j]-FPT(2.0)*Te[i*Nx+j])*dz_1*dz_1);
+			dTe[i*Nx+j] = srcTfactor * src + d * ((Te[i*Nx+jp1]+Te[i*Nx+jm1]-FPT(2.0)*Te[i*Nx+j])*dx_1*dx_1+(Te[ip1*Nx+j]+Te[im1*Nx+j]-FPT(2.0)*Te[i*Nx+j])*dz_1*dz_1);
 
 /*
 			dTe[i*Nx+j] = SRCFACTOR * src + d * ((Te[i*Nx+jp1]+Te[i*Nx+jm1]-FPT(2.0)*Te[i*Nx+j])*dx_1*dx_1+(Te[ip1*Nx+j]+Te[im1*Nx+j]-FPT(2.0)*Te[i*Nx+j])*dz_1*dz_1);
@@ -341,17 +341,18 @@ simple_dTe_Kernel(int Nx, int Nz, FL_DBL D, FL_DBL NuTratio, FL_DBL mediaTe0, FL
 
 
 __global__ void
-simple_Te_Kernel(int Nx, int Nz, FL_DBL* dTe, FL_DBL* Te, FL_DBL dt)
+simple_Te_Kernel(int Nx, int Nz, FL_DBL* dTe, FL_DBL* Te, FL_DBL dt, FL_DBL mediaTe0)
 {
 	const int j=threadIdx.x+blockIdx.x*blockDim.x;
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
   if(dTe[i*Nx+j] == FPT(0.0))
     return;
 	Te[i*Nx+j] += dTe[i*Nx+j] * dt;
+	Te[i*Nx+j] = mediaTe0 + Te[i*Nx+j] < FPT(0.) ? -mediaTe0 : Te[i*Nx+j]; 
 }
 
 __global__ void
-simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, FL_DBL* Ey, FL_DBL* Ez, FL_DBL* nlx, FL_DBL* nly, FL_DBL* nlz, FL_DBL* n, FL_DBL* Te, FL_DBL NUTratio, FL_DBL mediaTe0, FL_DBL dx_1, FL_DBL dz_1, FL_DBL dt, FL_DBL Nu, FL_DBL landauDamping, FL_DBL* phv_z, FL_DBL* phv_x, FL_DBL* ph_z, FL_DBL* ph_x, FL_DBL mx_1, FL_DBL my_1,FL_DBL mz_1, FL_DBL omegaOpt /*media_phonon_omega*/, FL_DBL PHW /*media_phonon_phw*/, FL_DBL OPT_PH /*media_phonon_beta*/, bool do_phonons, FL_DBL n0, FL_DBL* mat_mask, bool hh_linear)
+simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, FL_DBL* Ey, FL_DBL* Ez, FL_DBL* nlx, FL_DBL* nly, FL_DBL* nlz, FL_DBL* vx, FL_DBL* vy, FL_DBL* vz,FL_DBL* n, FL_DBL* Te, FL_DBL NUTratio, FL_DBL mediaTe0, FL_DBL dx_1, FL_DBL dz_1, FL_DBL dt, FL_DBL Nu, FL_DBL landauDamping, FL_DBL Vdiffusion, FL_DBL* phv_z, FL_DBL* phv_x, FL_DBL* ph_z, FL_DBL* ph_x, FL_DBL mx_1, FL_DBL my_1,FL_DBL mz_1, FL_DBL omegaOpt /*media_phonon_omega*/, FL_DBL PHW /*media_phonon_phw*/, FL_DBL OPT_PH /*media_phonon_beta*/, bool do_phonons, FL_DBL n0, FL_DBL* mat_mask, bool hh_linear, bool neumann)
 {
 	const int j=threadIdx.x+blockIdx.x*blockDim.x;
 	const int i=threadIdx.y+blockIdx.y*blockDim.y;
@@ -361,7 +362,19 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, F
 		int im1 = (i == 0     ) ? i : i - 1;
 		int jp1 = (j == Nx - 1) ? j : j + 1;
 		int jm1 = (j == 0     ) ? j : j - 1;
-
+		
+		int ip1vd,im1vd,jp1vd,jm1vd; // indices for vdiffusion
+		if(neumann) {
+			ip1vd = (i==Nz-1 || mat_mask[(i+1)*Nx+j] == FPT(0.0)) ? i : i + 1; //von neumann bc
+			jp1vd = (j==Nx-1 || mat_mask[i*Nx+(j+1)] == FPT(0.0)) ? j : j + 1; //von neumann bc
+			im1vd = (i==0 || mat_mask[(i-1)*Nx+j] == FPT(0.0)) ? i : i - 1; //von neumann bc
+			jm1vd = (j==0 || mat_mask[i*Nx+(j-1)] == FPT(0.0)) ? j : j - 1; //von neumann bc
+		} else {
+		  ip1vd = (i == Nz - 1) ? i : i + 1;
+		  im1vd = (i == 0     ) ? i : i - 1;
+		  jp1vd = (j == Nx - 1) ? j : j + 1;
+		  jm1vd = (j == 0     ) ? j : j - 1;
+		}
 //PROBLEMS APPEAR IF ADDING THIS CODE ON gpu# > 0
 
 		const FL_DBL mask_z = mat_mask[i*Nx+j] == mat_mask[im1*Nx+j] ? mat_mask[i*Nx+j] : FPT(0.0);
@@ -415,10 +428,10 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, F
 
     const FL_DBL Te_y = Te[i*Nx+j];
 
-		FL_DBL Nu_y = (mask_y == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_y)) );
+		const FL_DBL Nu_y = (mask_y == FPT(0.0)) ? FPT(0.0) : (hh_linear ? Nu : Nu * (FPT(1.0) + NUTratio * SQRTNUT(Te_y)) );
 
     	
-		FL_DBL Jz_t = landauDamping*(Jz[i*Nx+jp1]+Jz[i*Nx+jm1]-FPT(2.0)*Jz[i*Nx+j])*dx_1*dx_1-Jz[i*Nx+j] * Nu_z 
+		FL_DBL Jz_t = (n_z + n0_z) * Vdiffusion*((vz[i*Nx+jp1vd]+vz[i*Nx+jm1vd]-FPT(2.0)*vz[i*Nx+j])*dx_1*dx_1+(vz[ip1vd*Nx+j]+vz[im1vd*Nx+j]-FPT(2.0)*vz[i*Nx+j])*dz_1*dz_1)+landauDamping*(Jz[i*Nx+jp1]+Jz[i*Nx+jm1]-FPT(2.0)*Jz[i*Nx+j])*dx_1*dx_1/*-Jz[i*Nx+j] * Nu_z*/ 
                   + mz_1 * (n_z + n0_z) * Ez[i*Nx+j] - (hh_linear ? FPT(0.0) : IFNONLIN*nlz[i*Nx+j]) - mz_1 * ((hh_linear ? FPT(0.0) : (n[i*Nx+j] * Te[i*Nx+j] - n[im1*Nx+j] * Te[im1*Nx+j] + n0_z * (Te[i*Nx+j] - Te[im1*Nx+j]))) + mediaTe0 * (n[i*Nx+j] - n[im1*Nx+j])) * dz_1;
 
 
@@ -435,7 +448,7 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, F
     //FL_DBL Jz_t = (n_z + n0_z) * Ez[i*Nx+j] - (n[i*Nx+j] * Te[i*Nx+j] - n[im1*Nx+j] * Te[im1*Nx+j] + mediaTe0 * (n[i*Nx+j] - n[im1*Nx+j])) * dz_1
 
 
-		FL_DBL Jx_t = landauDamping*(Jx[ip1*Nx+j]+Jx[im1*Nx+j]-FPT(2.0)*Jx[i*Nx+j])*dz_1*dz_1 - Jx[i*Nx+j] * Nu_x
+		FL_DBL Jx_t = (n_x + n0_x) * Vdiffusion*((vx[i*Nx+jp1vd]+vx[i*Nx+jm1vd]-FPT(2.0)*vx[i*Nx+j])*dx_1*dx_1+(vx[ip1vd*Nx+j]+vx[im1vd*Nx+j]-FPT(2.0)*vx[i*Nx+j])*dz_1*dz_1)+landauDamping*(Jx[ip1*Nx+j]+Jx[im1*Nx+j]-FPT(2.0)*Jx[i*Nx+j])*dz_1*dz_1/* - Jx[i*Nx+j] * Nu_x*/
                   + mx_1 * (n_x + n0_x) * Ex[i*Nx+j] - (hh_linear ? FPT(0.0) : IFNONLIN*nlx[i*Nx+j]) - mx_1 * ((hh_linear ? FPT(0.0) : (n[i*Nx+j] * Te[i*Nx+j] - n[i*Nx+jm1] * Te[i*Nx+jm1] + n0_x * (Te[i*Nx+j] - Te[i*Nx+jm1]))) + mediaTe0 * (n[i*Nx+j] - n[i*Nx+jm1])) * dx_1;
 
 
@@ -453,7 +466,7 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, F
 
 
 
-		FL_DBL Jy_t = landauDamping*(Jy[ip1*Nx+j]+Jy[im1*Nx+j]-FPT(2.0)*Jy[i*Nx+j])*dz_1*dz_1 - Jy[i*Nx+j] * Nu_y
+		FL_DBL Jy_t = (n_y + n0_y) * Vdiffusion*((vy[i*Nx+jp1vd]+vy[i*Nx+jm1vd]-FPT(2.0)*vy[i*Nx+j])*dx_1*dx_1+(vy[ip1vd*Nx+j]+vy[im1vd*Nx+j]-FPT(2.0)*vy[i*Nx+j])*dz_1*dz_1)+landauDamping*(Jy[ip1*Nx+j]+Jy[im1*Nx+j]-FPT(2.0)*Jy[i*Nx+j])*dz_1*dz_1/* - Jy[i*Nx+j] * Nu_y*/
                   + my_1 * (n_y + n0_y) * Ey[i*Nx+j] - (hh_linear ? FPT(0.0) : IFNONLIN*nly[i*Nx+j]);
 
 
@@ -484,6 +497,14 @@ simpleJ_Kernel(int Nx, int Nz, FL_DBL* Jx, FL_DBL* Jy, FL_DBL* Jz, FL_DBL* Ex, F
 			ph_z[i*Nx+j]+=phv_z[i*Nx+j]*dt;
 			ph_x[i*Nx+j]+=phv_x[i*Nx+j]*dt;		
 		}
+		
+		//Jx[i*Nx+j] = Nu_x * dt > FPT(1.) ? FPT(.0) : Jx[i*Nx+j];
+		//Jy[i*Nx+j] = Nu_y * dt > FPT(1.) ? FPT(.0) : Jy[i*Nx+j];
+		//Jz[i*Nx+j] = Nu_z * dt > FPT(1.) ? FPT(.0) : Jz[i*Nx+j];
+		Jx[i*Nx+j] *= exp(-Nu_x * dt);
+		Jy[i*Nx+j] *= exp(-Nu_y * dt);
+		Jz[i*Nx+j] *= exp(-Nu_z * dt);
+		
 	}
 }
 
@@ -824,6 +845,44 @@ inline void roll(hydro2dHandler* hH) // shft is counted in blocks
 */
 
 
+extern "C"
+std::string hydro2dHandler::get_description() {
+	std::stringstream ss;
+	ss << "grid: Lx=" << Lx << ", Lz=" << Lz << ", Nx=" << Nx << ", Nz=" << Nz << ", dx_1=" << dx_1 << " (dx=" << FPT(1.0)/dx_1 << "), dz_1=" << dz_1 << " (dz=" << FPT(1.0)/dz_1 << "), dt=" << dt << ",\ngeometry: " << (a_cell ? "from CELL":"from parameters") << " surfaceX=" << surfaceX << ", toothWith=" << toothWidth<< ", toothDepth=" << toothDepth << ", mediaDepth=" << mediaDepth << ", flip=" << (flip?"true":"false") << ", toothDirection=" << (toothDir?"true":"false") << ",\nmedia: n0=" << mediaN0 << ", T0=" << mediaTe0 << ", nu=" << mediaNu << ", diffusion=" << diffusion << ", Vdiffusion=" << Vdiffusion << "," << " mx_1=" << mx_1 << "," << " my_1=" << my_1 << "," << " mz_1=" << mz_1 << ", NUTratio=" << NUTratio << ",";
+	if (doPolarization)
+	ss << "\n       bound_w2=" << media_bound_w2 << " bound_beta=" << media_bound_beta << ", bound_gamma=" << media_bound_gamma << std::endl;
+	if (doPhononAbsorbtion)
+	ss << "\n       phOmega=" << media_phonon_omega << ", phWidth=" << media_phonon_phw << ", phBeta=" << media_phonon_beta << std::endl;
+	ss << " current diffusion BC is : " << (neumann_current_diffusion ? "neumann\n" : "dirichlet\n");
+	if (!doPolarization && !doPolarization)
+		ss << std::endl;
+	if (extSource)
+		ss << "         therm source is external, srcX=" << srcX;
+	else
+		ss << "         source is electromagnetic";
+	ss << ", Bxext=" << Bxext << ", Byext=" << Byext << ", Bzext=" << Bzext << std::endl;
+	#ifdef STATIC
+	ss << ", srcAperture=" << srcAperture;
+	#endif
+	ss << ", srcAmp=" << srcAmp << ", srcT=" << srcT;
+	#ifdef STATIC
+	ss << ", srcTshift=" << srcTshift;
+	#endif
+	ss <<  ", srcPhase=" << srcPhase << ", srcNosc=" << srcNosc;
+	#ifdef STATIC
+	ss << ", srcApertureTE=" << srcApertureTE;
+	#endif
+	ss << ", srcAmpTE=" << srcAmpTE << ", srcTTE=" << srcTTE;
+	#ifdef STATIC
+	ss << ", srcTshiftTE=" << srcTshiftTE;
+	#endif
+	ss <<  ", srcPhaseTE=" << srcPhaseTE << ", srcNoscTE=" << srcNoscTE << ", switchOnDelay=" << switchOnDelay << ", srcTfactor=" << srcTfactor << std::endl;
+	ss << "         velocity=" << srcVelocity << std::endl;
+	ss << "         electrons heated by " << sHeatType(JHEAT) << std::endl;
+	ss << "         mode is " << (linear ? "linear" : "nonlinear") << std::endl;
+	return ss.str();
+}
+
 
 extern "C"
 int simpleGPUstep(hydro2dHandler* hH)
@@ -839,41 +898,7 @@ int simpleGPUstep(hydro2dHandler* hH)
 	{
 		coutMutex.lock();
 		std::cout << "Hi this is first step for device " << hH->device << std::endl;
-		std::cout << "grid: Lx=" << hH->Lx << ", Lz=" << hH->Lz << ", Nx=" << hH->Nx << ", Nz=" << hH->Nz << ", dx_1=" << hH->dx_1 << " (dx=" << FPT(1.0)/hH->dx_1 << "), dz_1=" << hH->dz_1 << " (dz=" << FPT(1.0)/hH->dz_1 << "), dt=" << hH->dt << ",\ngeometry: surfaceX=" << hH->surfaceX << ", toothWith=" << hH->toothWidth<< ", toothDepth=" << hH->toothDepth << ", mediaDepth=" << hH->mediaDepth << ", flip=" << (hH->flip?"true":"false") << ", toothDirection=" << (hH->toothDir?"true":"false") << ",\nmedia: n0=" << hH->mediaN0 << ", T0=" << hH->mediaTe0 << ", nu=" << hH->mediaNu << ", diffusion=" << hH->diffusion << "," << " mx_1=" << hH->mx_1 << "," << " my_1=" << hH->my_1 << "," << " mz_1=" << hH->mz_1 << ", NUTratio=" << hH->NUTratio << ",";
-		if (hH->doPolarization)
-		std::cout << "\n       bound_w2=" << hH->media_bound_w2 << " bound_beta=" << hH->media_bound_beta << ", bound_gamma=" << hH->media_bound_gamma << std::endl;
-		if (hH->doPhononAbsorbtion)
-		std::cout << "\n       phOmega=" << hH->media_phonon_omega << ", phWidth=" << hH->media_phonon_phw << ", phBeta=" << hH->media_phonon_beta << std::endl;
-		if (!hH->doPolarization && !hH->doPolarization)
-			std::cout << std::endl;
-		if (hH->extSource)
-			std::cout << "         therm source is external, srcX=" << hH->srcX;
-		else
-			std::cout << "         source is electromagnetic";
-		std::cout << ", Bxext=" << hH->Bxext << ", Byext=" << hH->Byext << ", Bzext=" << hH->Bzext << std::endl;
-		#ifdef STATIC
-		std::cout << ", srcAperture=" << hH->srcAperture;
-		#endif
-		std::cout << ", srcAmp=" << hH->srcAmp << ", srcT=" << hH->srcT;
-		#ifdef STATIC
-		std::cout << ", srcTshift=" << hH->srcTshift;
-		#endif
-		std::cout <<  ", srcPhase=" << hH->srcPhase << ", srcNosc=" << hH->srcNosc;
-		#ifdef STATIC
-		std::cout << ", srcApertureTE=" << hH->srcApertureTE;
-		#endif
-		std::cout << ", srcAmpTE=" << hH->srcAmpTE << ", srcTTE=" << hH->srcTTE;
-		#ifdef STATIC
-		std::cout << ", srcTshiftTE=" << hH->srcTshiftTE;
-		#endif
-		std::cout <<  ", srcPhaseTE=" << hH->srcPhaseTE << ", srcNoscTE=" << hH->srcNoscTE << ", switchOnDelay=" << hH->switchOnDelay << ", srcTfactor=" << hH->srcTfactor << std::endl;
-		std::cout << "         velocity=" << hH->srcVelocity << std::endl;
-		if (hH->JHEAT==1)
-			std::cout << "         electrons heated by current";
-		else if (hH->JHEAT==2)
-			std::cout << "         electrons heated classicaly by (j, E)";
-		else if (hH->JHEAT==0)
-			std::cout << "         electrons heated by electric field";
+		std::cout << hH->get_description();
     std::cout << std::endl << std::flush; 
 
 		coutMutex.unlock();
@@ -1024,24 +1049,24 @@ int simpleGPUstep(hydro2dHandler* hH)
 	if(!(hH->linear))
 	{
 		hH->tim.start("simple_dTe_Kernel");
-		if(hH->JHEAT == 1)
-			simple_dTe_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->diffusion, hH->NUTratio, hH->mediaTe0, hH->dTe, hH->Te, hH->n, hH->Jx, hH->Jz, hH->Jx, hH->Jz, hH->dz_1, hH->dx_1, hH->extSource ? hH->srct : 0, hH->srcx, hH->srcTfactor * hH->mediaNu / 1.5 / hH->mediaN0, hH->mat_mask); // note /1.5 is a fenomenological coefficient
-		else if(hH->JHEAT == 0)
-			simple_dTe_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->diffusion, hH->NUTratio, hH->mediaTe0, hH->dTe, hH->Te, hH->n, hH->Ex_mid, hH->Ez_mid, hH->Ex_mid, hH->Ez_mid, hH->dz_1, hH->dx_1, hH->extSource ? hH->srct : 0, hH->srcx, hH->srcTfactor, hH->mat_mask);
-		else if(hH->JHEAT == 2)
-			simple_dTe_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->diffusion, hH->NUTratio, hH->mediaTe0, hH->dTe, hH->Te, hH->n, hH->Ex_mid, hH->Ez_mid, hH->Jx, hH->Jz, hH->dz_1, hH->dx_1, hH->extSource ? hH->srct : 0, hH->srcx, hH->srcTfactor, hH->mat_mask);
+		if(hH->JHEAT == hydro2dHandler::eHEATTYPE::JJ)
+			simple_dTe_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->diffusion, hH->NUTratio, hH->mediaTe0, hH->dTe, hH->Te, hH->n, hH->Jx, hH->Jz, hH->Jx, hH->Jz, hH->dz_1, hH->dx_1, hH->extSource ? hH->srct : 0, hH->srcx, hH->srcTfactor * hH->mediaNu / 1.5 / hH->mediaN0, FPT(1.), hH->mat_mask); // note /1.5 is a fenomenological coefficient
+		else if(hH->JHEAT == hydro2dHandler::eHEATTYPE::EE)
+			simple_dTe_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->diffusion, hH->NUTratio, hH->mediaTe0, hH->dTe, hH->Te, hH->n, hH->Ex_mid, hH->Ez_mid, hH->Ex_mid, hH->Ez_mid, hH->dz_1, hH->dx_1, hH->extSource ? hH->srct : 0, hH->srcx, hH->srcTfactor, FPT(.0), hH->mat_mask);
+		else if(hH->JHEAT == hydro2dHandler::eHEATTYPE::JE)
+			simple_dTe_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->diffusion, hH->NUTratio, hH->mediaTe0, hH->dTe, hH->Te, hH->n, hH->Ex_mid, hH->Ez_mid, hH->Jx, hH->Jz, hH->dz_1, hH->dx_1, hH->extSource ? hH->srct : 0, hH->srcx, hH->srcTfactor, FPT(.0), hH->mat_mask);
 		
 		cudaThreadSynchronize();
 		hH->tim.stop("simple_dTe_Kernel");
 	
 		hH->tim.start("simple_Te_Kernel");
-		simple_Te_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->dTe, hH->Te, hH->dt);
+		simple_Te_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->dTe, hH->Te, hH->dt, hH->mediaTe0);
 		cudaThreadSynchronize();
 		hH->tim.stop("simple_Te_Kernel");
 	}
 
 	hH->tim.start("simpleJ_Kernel");
-	simpleJ_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jx, hH->Jy, hH->Jz, hH->Ex, hH->Ey, hH->Ez, hH->nlx, hH->nly, hH->nlz, hH->n, hH->Te, hH->NUTratio, hH->mediaTe0, hH->dx_1, hH->dz_1, hH->dt, hH->mediaNu, hH->landauDamping, hH->Phtz, hH->Phtx, hH->Phz, hH->Phx, hH->mx_1,  hH->my_1, hH->mz_1, hH->media_phonon_omega, hH->media_phonon_phw, hH->media_phonon_beta, hH->doPhononAbsorbtion, hH->mediaN0, hH->mat_mask, hH->linear);
+	simpleJ_Kernel<<< grid, threads >>>(hH->Nx, hH->Nz, hH->Jx, hH->Jy, hH->Jz, hH->Ex, hH->Ey, hH->Ez, hH->nlx, hH->nly, hH->nlz, hH->vx, hH->vy, hH->vz, hH->n, hH->Te, hH->NUTratio, hH->mediaTe0, hH->dx_1, hH->dz_1, hH->dt, hH->mediaNu, hH->landauDamping, hH->Vdiffusion, hH->Phtz, hH->Phtx, hH->Phz, hH->Phx, hH->mx_1,  hH->my_1, hH->mz_1, hH->media_phonon_omega, hH->media_phonon_phw, hH->media_phonon_beta, hH->doPhononAbsorbtion, hH->mediaN0, hH->mat_mask, hH->linear, hH->neumann_current_diffusion);
 	cudaThreadSynchronize();
 	hH->tim.stop("simpleJ_Kernel");
 
@@ -1468,6 +1493,8 @@ hydro2dHandler::hydro2dHandler(const hydro2dHandler &obj, int dev) : tim(obj.tim
 																																		 mediaN0(obj.mediaN0),
 																																		 mediaTe0(obj.mediaTe0),
 																																		 diffusion(obj.diffusion),
+																																		 Vdiffusion(obj.Vdiffusion),
+																																		 landauDamping(obj.landauDamping),
 																																		 NUTratio(obj.NUTratio),
 																																		 mx_1(obj.mx_1),
 																																		 my_1(obj.my_1),
@@ -1497,7 +1524,8 @@ hydro2dHandler::hydro2dHandler(const hydro2dHandler &obj, int dev) : tim(obj.tim
                                                                      Bzext(obj.Bzext),
 																																		 srcTfactor(obj.srcTfactor),
 																																		 switchOnDelay(obj.switchOnDelay),
-																																		 linear(obj.linear)
+																																		 linear(obj.linear),
+																																		 neumann_current_diffusion(obj.neumann_current_diffusion)
 {
 	alloc_main_fields(this);
 

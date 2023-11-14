@@ -40,8 +40,9 @@
 #define N0 FPT(1e-4) // 0.001
 #define TE0 FPT(3e-3) // 0.03
 #define MEDIANU FPT(0.0)
-#define LANDAUDAMPING FPT(0.0)//FPT(0.03) // model landau damping
+#define LANDAUDAMPING FPT(.0)//FPT(0.03) // model landau damping // CONSIDER REMOVING IT SINCE VDIFFUSION IS MORE CAREFULLY ADDED TO MODEL WITH CONTROLLED BCs
 #define DIFFUSION FPT(10.0) // electron thermal diffusion
+#define VDIFFUSION FPT(0.0) // electron velocity diffusion
 #define NUTRATIO FPT(.0) // 0.0
 #define VELOCITY FPT(1.2) //FPT(1.2)
 #define SRCT (FPT(36000.0)) //(FPT(18000.0)*FPT(4.0))
@@ -79,4 +80,4 @@
 #define OUTPUTFILENAME "data.dat"
 #define ITER 1000
 
-#define SQRTNUT(X) abs(X)
+#define SQRTNUT(X) (abs(X))

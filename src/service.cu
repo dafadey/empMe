@@ -4,6 +4,17 @@
 #include "funcall.h"
 
 extern "C"
+std::string sHeatType(const hydro2dHandler::eHEATTYPE ht) {
+	if(ht == hydro2dHandler::eHEATTYPE::JJ)
+		return "jxj";
+	else if(ht == hydro2dHandler::eHEATTYPE::JE)
+		return "jxE";
+	else if(ht == hydro2dHandler::eHEATTYPE::EE)
+		return "ExE";
+	return "unknown";
+}
+
+extern "C"
 void dev_alloc(hydro2dHandler* hH, void** pparr, int sz)
 {
 	if(cudaSetDevice(hH->device))

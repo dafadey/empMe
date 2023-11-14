@@ -19,7 +19,7 @@ NVCC_COMMAND_LINE := /usr/local/cuda-9.0/bin/nvcc -w -Xcompiler -fPIC $(enable_d
 
 GCC_COMMAND_LINE := /usr/bin/g++-6 -g $(INC) $(gccOPTS) $(enable_double) -Wall -Werror -c
 
-GCC_PY_COMMAND_LINE := /usr/bin/g++-6 -g $(INC) $(gccOPTS) -I/usr/include/python3.9 -c
+GCC_PY_COMMAND_LINE := /usr/bin/g++-6 -g $(INC) $(gccOPTS) -I/usr/include/python3.11 -c
 
 LINK_COMMAND_LINE := /usr/bin/g++-6 -fPIC $(LIB) $(MYLIBS) -Wl,-rpath=$(MYTOOLS)/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart
 

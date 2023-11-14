@@ -51,9 +51,11 @@ echo "linking static..."
 /usr/bin/g++-6 -g -fPIC $LIB geo.obj test.obj simple_static.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o test_mGPU_static
 
 echo "compiling python wrappers"
-/usr/bin/g++-6 ${INC} ${gccOPTS} -g src/pyAPI.cpp -c -o pyAPI.o -DPYMODNAME=pyEmpMe -I/usr/include/python3.9
+PYTHONH=/usr/include/python3.11
 
-/usr/bin/g++-6 ${INC} ${gccOPTS} src/pyAPI.cpp -c -o pyAPI_static.o -DSTATIC -DPYMODNAME=pyEmpMe_static -I/usr/include/python3.9
+/usr/bin/g++-6 ${INC} ${gccOPTS} -g src/pyAPI.cpp -c -o pyAPI.o -DPYMODNAME=pyEmpMe -I${PYTHONH}
+
+/usr/bin/g++-6 ${INC} ${gccOPTS} src/pyAPI.cpp -c -o pyAPI_static.o -DSTATIC -DPYMODNAME=pyEmpMe_static -I${PYTHONH}
 
 echo "linking python library"
 /usr/bin/g++-6 $LIB -fPIC pyAPI_static.o geo.obj simple_static.obj service.obj ${MYLIBS} -Wl,-rpath=${MYTOOLS}/lib -Wl,-rpath=${cuLIB} -fopenmp -lpthread -lcudart -o pyEmpMe_static.so -shared

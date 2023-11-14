@@ -135,13 +135,15 @@ int main(int argc, char* argv[])
 	bool toothDir(true);
 	bool flip(true);
 	bool DRAW(false);
+	bool neumann_current_diffusion(true);
 	bool doPhononAbsorbtion(false);
 	bool doPolarization(false);
 	bool extSource(false);
-	int jHeat(2);
+	hydro2dHandler::eHEATTYPE jHeat(hydro2dHandler::eHEATTYPE::JE);
   
   FL_DBL NUTratio(NUTRATIO);
 	FL_DBL diffusion(DIFFUSION);
+	FL_DBL Vdiffusion(VDIFFUSION);
 	FL_DBL mediaN0(N0);
 	FL_DBL mediaTe0(TE0);
 	FL_DBL mediaNu(MEDIANU);
@@ -253,10 +255,10 @@ int main(int argc, char* argv[])
 			PARSE(mx_1);
 			PARSE(my_1);
 			PARSE(diffusion);
+			PARSE(Vdiffusion);
 			PARSE2(doPhonon, doPhononAbsorbtion);
 			PARSE(doPolarization);
 			PARSE(extSource);
-      PARSE(jHeat);
 			PARSE2(Tmax,tMAX);
 			PARSE2(device,dev);
 			PARSE(bound_w2);
@@ -267,6 +269,16 @@ int main(int argc, char* argv[])
 			PARSE2(phBeta, phonon_beta);
 			PARSE2(silentIterations,iter);
 			PARSE(nonlinVSlin);
+			PARSE(neumann_current_diffusion);
+
+      //PARSE(jHeat);
+			if(name=="JJheat")
+				jHeat=hydro2dHandler::eHEATTYPE::JJ;
+			else if(name=="JEheat")
+				jHeat=hydro2dHandler::eHEATTYPE::JE;
+			else if(name=="EEheat")
+				jHeat=hydro2dHandler::eHEATTYPE::EE;
+			
 			printf("ERROR: input parameter %s is unknown\n",name.c_str());
 		}
 	}
@@ -347,12 +359,13 @@ int main(int argc, char* argv[])
 	description << "run: Tmax=" << tMAX << ", Tavg=" << Tavg << ", output=" << outputFilename << ", silentIterations(iterations before draw/save)=" << iter << ",\ngeometry: toothWith=" << toothWidth<< ", toothDepth=" << toothDepth << ", mediaDepth=" << mediaDepth;
 	if(c_ptr)
 		description << ", cellFilename=" << cellFilename << ", scalex=" << cell_scalex << ", scaley=" << cell_scaley;
-	description << ", flip=" << (flip?"true":"false") << ", toothDirection=" << (toothDir?"true":"false") << ",\nmedia: n0=" << mediaN0 << ", T0=" << mediaTe0 << ", nu=" << mediaNu << ", diffusion=" << diffusion << "," << " mx_1=" << mx_1 << "," << " my_1=" << my_1 << " mz_1=" << mz_1 << ", NUTratio=" << NUTratio << ",";
+	description << ", flip=" << (flip?"true":"false") << ", toothDirection=" << (toothDir?"true":"false") << ",\nmedia: n0=" << mediaN0 << ", T0=" << mediaTe0 << ", nu=" << mediaNu << ", diffusion=" << diffusion << ", Vdiffusion=" << Vdiffusion << "," << " mx_1=" << mx_1 << "," << " my_1=" << my_1 << " mz_1=" << mz_1 << ", NUTratio=" << NUTratio << ",";
 	if (doPolarization)
 	description << "\n       bound_w2=" << bound_w2 << " bound_beta=" << bound_beta << ", bound_gamma=" << bound_gamma << ",";
 	if (doPhononAbsorbtion)
 	description << "\n       phOmega=" << phonon_omega << ", phWidth=" << phonon_phw << ", phBeta=" << phonon_beta << ",";
 	description << "\nvizualization: DRAW=" << (DRAW?"true":"false") << std::endl;
+	std::cout << "current diffusion BC is : " << (neumann_current_diffusion ? "neumann\n" : "dirichlet\n");
 	if (extSource)
 		description << "         therm source is external, srcX=" << srcX;
 	else
@@ -375,12 +388,7 @@ int main(int argc, char* argv[])
 	#endif
 	description <<  ", srcPhaseTE=" << srcPhaseTE << ", srcNoscTE=" << srcNoscTE << ", switchOnDelay=" << switchOnDelay << ", srcTfactor=" << srcTfactor << std::endl;
 	description << "         velocity=" << velocity << std::endl;
-	if (jHeat==1)
-	  description << "         electrons heated by current";
-	else if (jHeat==2)
-	  description << "         electrons heated classicaly by (j, E)";
-	else if (jHeat==0)
-	  description << "         electrons heated by electric field";
+	description << "         electrons heated by " << sHeatType(jHeat);
 	description << std::endl;
 	description << (nonlinVSlin ? "   generated signal = non_linear - linear" : "   generated signal = 2 * (non_linear(A) - 2 * non_linear(A/2))");
 	description << std::endl;
@@ -468,6 +476,7 @@ int main(int argc, char* argv[])
 	hH->mediaTe0 = mediaTe0;
 	hH->mediaNu = mediaNu;
 	hH->diffusion = diffusion;
+	hH->Vdiffusion = Vdiffusion;
 	hH->NUTratio = NUTratio;
 	hH->media_bound_w2 = bound_w2;
 	hH->media_bound_gamma = bound_gamma;
@@ -486,7 +495,7 @@ int main(int argc, char* argv[])
 	hH->switchOnDelay = switchOnDelay;
 	hH->srcX = srcX;
 	hH->landauDamping = landauDamping;
-	
+	hH->neumann_current_diffusion = neumann_current_diffusion;
 	simpleGPUinit(hH); // do all allocations and so on...
 	
 	hydro2dHandler* hH_weak = nullptr;

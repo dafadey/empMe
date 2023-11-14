@@ -67,6 +67,7 @@ struct map_timer
 extern "C"
 struct hydro2dHandler
 {
+	enum eHEATTYPE{EE=0, JJ=1, JE=2};
 	map_timer tim;
 	const int device; // deny moving to another device by switchig this field
 	//holds information about 
@@ -159,6 +160,7 @@ struct hydro2dHandler
 	FL_DBL mediaNu;
 	FL_DBL NUTratio; // this is how nu depends on T : nu = mediaNu * (1.0 + NUTratio * Te)
 	FL_DBL landauDamping;
+	FL_DBL Vdiffusion; // diffusion of current dj/dt ~ Vdiff n \Laplassian(V) (NOTE: neumann_current_diffusion flag controls boundary conditions)
 	//effective electron massses
 	FL_DBL mx_1;
 	FL_DBL my_1;
@@ -200,22 +202,27 @@ struct hydro2dHandler
 	const bool doPolarization; // never change this after construction! because reallocation will be needed
 	const bool doPhononAbsorbtion; // never change this after construction! because reallocation will be needed
 	const bool extSource;
-	const int JHEAT; // 0-E^2, 1-j^2, 2-j*E
+	const eHEATTYPE JHEAT;
 	bool toothDir; // positive/negative
 	bool flip; // if flip then tooths are below surface
 
 	bool linear;
+	bool neumann_current_diffusion;
 	
 	void* pywrapper;
 
 	double (*TEsource_callback)(double /*t*/, double /*z*/, void* /*PyObject if needed*/) = nullptr;
 	double (*TMsource_callback)(double /*t*/, double /*z*/, void* /*PyObject if needed*/) = nullptr;
 
-	hydro2dHandler(int /*dev*/, bool = false /*doPhononAbsorbtion*/, bool = false /*doPolarization*/, bool = false/*extSource*/, int = 0 /*JHEAT*/);
+	hydro2dHandler(int /*dev*/, bool = false /*doPhononAbsorbtion*/, bool = false /*doPolarization*/, bool = false/*extSource*/, eHEATTYPE = eHEATTYPE::EE /*JHEAT*/);
 	hydro2dHandler(const hydro2dHandler& obj, int dev = -1);
+	std::string get_description();
 private:
 	hydro2dHandler();
 };
+
+extern "C"
+std::string sHeatType(const hydro2dHandler::eHEATTYPE ht);
 
 extern "C"
 void dev_alloc(hydro2dHandler* hH, void** pparr, int sz);
